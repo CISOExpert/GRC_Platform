@@ -289,4 +289,4 @@ For single-team internal use, local + lightweight AWS deploy later is sufficient
 Internal proprietary (license decision pending; may shift to dual-license model later).
 
 ---
-*Last Updated: October 24, 2025*
+*Last Updated: October 24, 2025*# GRC_Platform
