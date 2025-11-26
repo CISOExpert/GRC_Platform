@@ -1,0 +1,488 @@
+Below is a self-contained text document you can feed into AI to explain how SCF, ICM, C|P-RMM, and C|P-CMM fit together and how to turn them into a functional application model.
+
+---
+
+# Integrated Cybersecurity & Privacy Model for Application Design
+
+(SCF + ICM + C|P-RMM + C|P-CMM)
+
+## 1. Purpose
+
+This document describes a unified conceptual model that combines:
+
+* Secure Controls Framework (SCF) controls and catalogs
+* Integrated Controls Management (ICM) governance model
+* Cybersecurity & Data Privacy Risk Management Model (C|P-RMM) 
+* Cybersecurity & Data Privacy Capability Maturity Model (C|P-CMM) 
+
+The goal is to define:
+
+1. Core **entities** (objects/tables).
+2. **Relationships** between those entities.
+3. **Lifecycle steps** and workflows.
+
+So an application can:
+
+* Maintain a **controls-centric** view of security & privacy. 
+* Manage **risk**, **maturity**, and **compliance** in a consistent way. 
+* Support **planning, execution, monitoring, and improvement** of GRC operations.
+
+---
+
+## 2. Core Components & Their Roles
+
+### 2.1 Secure Controls Framework (SCF)
+
+SCF is a **common controls catalog** that maps to many laws, regulations, and frameworks. Each SCF control:
+
+* Has a unique identifier and description.
+* May be mapped to statutory, regulatory, and contractual **obligations**. 
+* Is tagged for **applicability** across People, Processes, Technology, Data, and Facilities (PPTDF). 
+* Has associated **Assessment Objectives (AOs)** and **Evidence Request List (ERL)** entries (what you check and what you collect). 
+
+In the application, SCF provides:
+
+* The **master control catalog**.
+* A basis for **policies, standards, procedures**, and **assessment criteria**.
+
+---
+
+### 2.2 Integrated Controls Management (ICM)
+
+ICM is a **controls-centric GRC operating model**. It treats controls as the **hub** that everything else anchors to: policies, standards, procedures, metrics, threats, and risks. 
+
+ICM introduces:
+
+1. **Minimum Compliance Requirements (MCR)** – “must-have” controls to satisfy laws, regulations, and contracts.
+2. **Discretionary Security Requirements (DSR)** – “above and beyond” controls that reflect risk appetite and desired resilience. 
+3. **PPTDF model** for control applicability:
+
+   * People
+   * Processes
+   * Technology
+   * Data
+   * Facilities 
+4. A **Plan-Do-Check-Act (PDCA)** approach to GRC:
+
+   * **Plan** – Establish context, define applicable controls, assign maturity criteria, publish policies & standards.
+   * **Do** – Implement controls, assign accountability, operate processes.
+   * **Check** – Maintain situational awareness, assess controls, monitor risk.
+   * **Act** – Manage risk, evolve processes, remediate deficiencies. 
+
+In the application, ICM defines:
+
+* How to **scope** controls (MCR vs DSR, PPTDF).
+* How to **operate** governance, risk, and compliance as connected loops.
+
+---
+
+### 2.3 Cybersecurity & Data Privacy Capability Maturity Model (C|P-CMM)
+
+C|P-CMM is a **maturity model built into SCF**. Each SCF control has defined criteria for maturity Levels L0-L5. 
+
+Defined levels:
+
+* **L0 – Not Performed**
+* **L1 – Performed Informally**
+* **L2 – Planned & Tracked**
+* **L3 – Well Defined**
+* **L4 – Quantitatively Controlled**
+* **L5 – Continuously Improving** 
+
+Key points:
+
+* Maturity is **nested**: higher levels assume lower levels exist (you cannot “run” before you “walk”). 
+* Maturity (governance quality) is **not the same as assurance** (how well the control actually works in practice). 
+
+In the application, C|P-CMM provides:
+
+* Target maturity levels per control, domain, project, or function.
+* Actual maturity assessments per control.
+* A way to define **negligence thresholds** and “sweet spot” maturity (e.g., L2–L3 is generally expected; L0–L1 may be negligent for certain controls). 
+
+---
+
+### 2.4 Cybersecurity & Data Privacy Risk Management Model (C|P-RMM)
+
+C|P-RMM is a **17-step risk management process** that uses SCF controls, C|P-CMM, and catalogs for risks and threats. 
+
+High-level C|P-RMM steps (summarized):
+
+1. Identify risk management principles.
+2. Identify, implement, and document dependencies (risk, technology, business).
+3. Formalize risk management practices.
+4. Establish a **risk catalog**.
+5. Establish a **threat catalog** (natural and manmade).
+6. Establish a **controls catalog**.
+7. Define **CMM targets** for controls.
+8. Define **assessment rigor** levels (1–3).
+9. Establish context for assessing risks.
+10. Perform **conformity (controls gap) assessment**.
+11. Apply **assessment methods** and document findings.
+12. Determine **risk exposure** (impact, likelihood, inherent and residual risk).
+13. Prioritize and document deficiencies.
+14. Report on conformity (Strictly Conforms, Conforms, Significant Deficiency, Material Weakness).
+15. Identify appropriate management audience.
+16. Management determines risk treatment (reduce, avoid, transfer, accept).
+17. Practitioners implement and document treatment. 
+
+In the application, C|P-RMM defines:
+
+* How to turn control gaps into **quantified risks**.
+* How to move from **assessment data → risk exposure → treatment decisions**.
+
+---
+
+## 3. Conceptual Entity Model
+
+Below are the core data objects (entities) an application should support and how they connect.
+
+### 3.1 Obligations & Requirements
+
+**Entities:**
+
+* **Obligation**
+
+  * Types: Statutory, Regulatory, Contractual. 
+  * Fields: `id`, `name`, `type`, `jurisdiction`, `description`, `source_reference`, `effective_date`, `status`.
+
+* **Requirement**
+
+  * A specific clause/control requirement derived from an obligation.
+  * Fields: `id`, `obligation_id`, `statement`, `category` (security, privacy, resilience), `priority`, `mandatory_flag`.
+
+**Relationships:**
+
+* One **Obligation** → many **Requirements**.
+* Requirements map to **SCF Controls** as MCR (minimum compliance) or DSR (discretionary). 
+
+---
+
+### 3.2 Controls & Control Metadata
+
+**Control**
+
+Core representation of an SCF control in the application. 
+
+* Fields:
+
+  * `control_id` (SCF ID)
+  * `title`
+  * `description`
+  * `domain` (SCF domain)
+  * `weight` (materiality / control weighting if used)
+  * `is_material_control` (boolean)
+  * `is_mcr` (Minimum Compliance Requirement)
+  * `is_dsr` (Discretionary Security Requirement) 
+  * `applicability_people` (bool)
+  * `applicability_processes` (bool)
+  * `applicability_technology` (bool)
+  * `applicability_data` (bool)
+  * `applicability_facilities` (bool) 
+
+**Control–Requirement Mapping**
+
+* Table linking SCF controls to external/internal requirements.
+* Fields: `id`, `control_id`, `requirement_id`, `mapping_type` (subset, intersects, equal, etc., aligned to STRM concepts). 
+
+**Control Policy / Standard / Procedure**
+
+* **PolicyStatement** – high-level intent mapped to one or more controls.
+* **StandardStatement** – specific “shall/should” statements tied to controls.
+* **Procedure** – step-by-step instructions or SOPs.
+
+Each of these entities should include:
+
+* `id`, `title`, `description`, `owner`, `status`, `last_reviewed_date`.
+* A mapping table to `control_id`.
+
+---
+
+### 3.3 Assets & PPTDF Context
+
+**Asset**
+
+Represents something that controls and risks apply to.
+
+* Fields: `id`, `name`, `type` (system, application, dataset, facility, business process, etc.), `description`, `business_owner`, `technical_owner`.
+
+**PPTDF Scope Tagging**
+
+Attach PPTDF context to assets and controls:
+
+* `asset_type` (People / Process / Technology / Data / Facility).
+* Controls and risks use PPTDF flags to understand applicability and scoping. 
+
+---
+
+### 3.4 Threats, Risks, and Incidents
+
+**Threat**
+
+Item in the **threat catalog** (natural or manmade).
+
+* Fields: `id`, `name`, `category` (natural, manmade), `description`, `is_material_threat`, `references`.
+
+**Risk**
+
+Item in the **risk catalog**.
+
+* Fields:
+
+  * `risk_id`
+  * `title`
+  * `description`
+  * `category` (strategic, operational, compliance, etc.)
+  * `primary_asset_id`
+  * `threat_id` (link to Threat)
+  * `associated_control_ids` (array / join table)
+  * `risk_owner` (LOB / function)
+  * **Scoring fields** for C|P-RMM:
+
+    * `impact_effect` (IE)
+    * `occurrence_likelihood` (OL)
+    * `inherent_risk_score`
+    * `residual_risk_score`
+  * `risk_tolerance_band` (e.g., Low/Moderate/High)
+  * `risk_threshold` (specific trigger values)
+  * `risk_appetite_tag` (how it relates to the organization’s overall appetite). 
+
+**Incident**
+
+Represents an event that may be material.
+
+* Fields: `id`, `title`, `description`, `date_detected`, `impact_summary`, `status`, `is_material_incident`, `related_risk_id`, `related_control_ids`. 
+
+---
+
+### 3.5 Assessments, Evidence, Findings & Risk Treatment
+
+**Assessment**
+
+A specific evaluation event (e.g., annual SCF assessment, project-specific review).
+
+* Fields:
+
+  * `assessment_id`
+  * `name`
+  * `scope_description` (assessment boundary)
+  * `rigor_level` (1 – Standard, 2 – Enhanced, 3 – Comprehensive)
+  * `start_date`, `end_date`
+  * `assessor_type` (1PD, 3PA, etc.) 
+  * `status`.
+
+**AssessmentObjective (AO)**
+
+Control-level objective being assessed.
+
+* Fields:
+
+  * `ao_id`
+  * `control_id`
+  * `statement`
+  * `evidence_expected` (link to ERL category) 
+
+**EvidenceItem**
+
+Collected artifacts for an AO during an Assessment.
+
+* Fields: `id`, `assessment_id`, `ao_id`, `evidence_type`, `location`, `reviewer`, `review_date`.
+
+**Finding**
+
+Result from comparing evidence to AO and control criteria.
+
+* Fields:
+
+  * `finding_id`
+  * `assessment_id`
+  * `control_id`
+  * `severity` (e.g., Observation, Significant Deficiency, Material Weakness).
+  * `description`
+  * `related_risk_id` (optional link)
+  * `recommended_action`.
+
+**RiskTreatment**
+
+Represents management’s decision and plan.
+
+* Fields:
+
+  * `treatment_id`
+  * `risk_id`
+  * `decision` (Reduce, Avoid, Transfer, Accept) 
+  * `justification`
+  * `approval_level` (mapped to risk thresholds / authority levels)
+  * `effective_date`
+  * `planned_actions` (link to tasks / POA&M items).
+
+**POA&M / Task**
+
+Plan of Action & Milestones entries.
+
+* Fields: `id`, `treatment_id`, `control_id`, `description`, `owner`, `due_date`, `status`.
+
+---
+
+### 3.6 Maturity (C|P-CMM) and Negligence Threshold
+
+**MaturityTarget**
+
+Target maturity per control, domain, asset group, or organization.
+
+* Fields:
+
+  * `id`
+  * `scope_type` (control/domain/org/project)
+  * `scope_ref_id`
+  * `target_level` (0–5)
+  * `rationale`
+  * `negligence_threshold` (minimum acceptable level).
+
+**MaturityAssessment**
+
+Actual maturity rating for a control at a point in time.
+
+* Fields:
+
+  * `id`
+  * `control_id`
+  * `assessment_id`
+  * `assessed_level` (0–5)
+  * `evidence_summary`
+  * `reviewer`.
+
+The application should be able to:
+
+* Compare **assessed_level vs target_level**.
+* Flag controls where assessed_level < negligence_threshold.
+
+---
+
+## 4. Lifecycle & Workflow Integration
+
+This section describes how to orchestrate the frameworks into a logical, repeatable application workflow.
+
+### 4.1 GRC PDCA Loop (ICM) as the Backbone
+
+1. **PLAN**
+
+   * Import/define **obligations and requirements**.
+   * Tailor **SCF controls** into an internal catalog; tag each control as MCR vs DSR and PPTDF.
+   * Define **ICM context**: business units, assets, LOB stakeholders, risk appetite.
+   * Set **C|P-CMM target maturity levels** per control/domain and define negligence thresholds.
+
+2. **DO**
+
+   * Implement controls via policies, standards, procedures, technologies, and training (mapped to controls).
+   * Assign **owners** for controls, risks, and assets.
+   * Run projects and BAU operations aligned to controls.
+
+3. **CHECK**
+
+   * Execute **assessments** at defined rigor levels (C|P-RMM Step 8).
+   * Collect **evidence** and record **findings** per control and AO.
+   * Calculate **C|P-CMM maturity** per control and compare to targets.
+   * Use findings to update the **risk catalog** and **risk exposure** (C|P-RMM Steps 4, 12).
+
+4. **ACT**
+
+   * Prioritize deficiencies and update **POA&M** (C|P-RMM Step 13).
+   * Produce **conformity reports** (Strictly Conforms, Conforms, Significant Deficiency, Material Weakness). 
+   * Route risks to appropriate **management audiences** and record **risk treatment** (Steps 14–16).
+   * Implement and track remediation, then re-assess to close the loop (Step 17).
+
+---
+
+### 4.2 C|P-RMM Steps Mapped to App Functions
+
+High-level mapping:
+
+* **Steps 1–3**: Configuration & governance:
+
+  * App modules: “Program Setup”, “Risk Management Settings”, “Roles & Authority Levels”.
+
+* **Steps 4–6**: Catalog management:
+
+  * Risk Catalog → `Risk` entity.
+  * Threat Catalog → `Threat` entity.
+  * Controls Catalog → `Control` entity (SCF).
+
+* **Step 7**: Maturity targets:
+
+  * `MaturityTarget` entities per control/domain.
+
+* **Step 8–11**: Assessment engine:
+
+  * `Assessment`, `AssessmentObjective`, `EvidenceItem`, `Finding`.
+
+* **Step 12**: Risk exposure calculation:
+
+  * Use `impact_effect`, `occurrence_likelihood`, control weighting, and maturity delta to produce `inherent_risk_score` and `residual_risk_score`. 
+
+* **Steps 13–14**: Prioritization & reporting:
+
+  * Views and reports that aggregate **findings**, residual risk, and conformity status.
+
+* **Steps 15–17**: Governance and execution:
+
+  * Workflow to route decisions to appropriate management based on **risk thresholds**; tracking `RiskTreatment` and `POA&M` tasks until closure.
+
+---
+
+## 5. Recommended High-Level Application Structure
+
+Below is a concise grouping of modules you can use as a blueprint.
+
+### 5.1 Catalog & Configuration
+
+* Obligations & Requirements
+* SCF Control Catalog (w/ PPTDF, MCR/DSR, mappings)
+* Risk Catalog
+* Threat Catalog
+* Asset Inventory (with PPTDF scoping)
+* C|P-CMM Target Maturity Configuration
+
+### 5.2 Governance & Documentation
+
+* Policy Management
+* Standards Management
+* Procedures / SOPs
+* Control Ownership & Accountability
+
+### 5.3 Assessment & Maturity
+
+* Assessment Campaigns (scoped by BU, asset, or obligation)
+* AOs & Evidence Requests
+* Evidence Collection & Storage
+* Findings, Conformity Status, and C|P-CMM Maturity Ratings
+
+### 5.4 Risk Management
+
+* Risk Register (linked to controls, threats, assets)
+* Risk Scoring (impact, likelihood, inherent/residual)
+* Risk Appetite, Tolerance, and Thresholds configuration
+* Risk Treatment Workflow (reduce, avoid, transfer, accept)
+
+### 5.5 Improvement, Reporting & Dashboards
+
+* POA&M / Task Tracking
+* Negligence Threshold Alerts (maturity below allowed levels)
+* Conformity & Material Weakness Reports
+* Executive & LOB Dashboards (risk posture, maturity heatmaps, compliance coverage)
+
+---
+
+## 6. How an AI Should Use This Model
+
+When given this structure, an AI assistant can:
+
+1. **Design schemas** – Propose relational or document DB schemas based on the entities and relationships above.
+2. **Generate workflows** – Build step-by-step GRC workflows aligned to PDCA and C|P-RMM.
+3. **Map external inputs** – Take new laws/requirements and map them to SCF controls and existing obligations.
+4. **Propose KPIs/KRIs** – Suggest metrics per control, domain, or risk based on maturity targets and residual risk.
+5. **Draft content** – Generate control-aligned policies, standards, and procedures anchored on SCF controls and ICM principles.
+
+---
+
+This completes the integrated text model you can feed into AI to build out a functional application using the SCF + ICM + C|P-RMM + C|P-CMM structure.
