@@ -1,6 +1,7 @@
 # GRC Unified Platform
 
 ## 🚀 Quick Start - How to Start the System
+- git push 
 
 ### Prerequisites
 - **Node.js >= 20.9.0** (check with `node -v`)
@@ -11,39 +12,23 @@
 
 1. **Start Supabase (Database + Auth)**
    ```bash
-   # From project root
-   supabase start
-   ```
-   Wait for all services to start (this takes 30-60 seconds)
+   ## Safety Primer & DB Rules
 
-2. **Start the Frontend**
-   ```bash
-   cd frontend
-   npm run dev
-   ```
+   For the authoritative safety rules and stack primer used by both humans and AI assistants in this repo, see:
 
-3. **Access the Platform**
-   - **URL**: http://localhost:3000
-   - **Login**: davidmoneil@gmail.com
-   - **Password**: admin123
+   - `docs/copilot-guidelines.md`
+   - `docs/db-patching-guidelines.md`
+   - `docs/safety-primer.md`
 
-### Stopping the System
+   These documents define:
+   - The current stack configuration (TypeScript, Next.js, Supabase/PostgreSQL).
+   - The three database environments (`dev_db`, `stage_db`, `prod_db`).
+   - Hard rules for **never** using `DROP DATABASE`, `TRUNCATE`, or full resets.
+   - Required workflows for any data fixes (read-only `SELECT` first, then idempotent, narrowly scoped patches/migrations with documentation).
 
-```bash
-# Stop frontend: Ctrl+C in the terminal running npm run dev
+   All contributors and AI tools should follow those guidelines when proposing or executing changes.
 
-# Stop Supabase
-supabase stop
-```
-
-### Quick Health Check
-
-After starting, verify everything works:
-1. Go to http://localhost:3000
-2. Login with credentials above
-3. You should see the dashboard with statistics
-4. Navigate to Organizations, Frameworks, or Policies pages
-5. All data should load from the database
+   # Using The Help Docs
 
 ---
 
@@ -287,6 +272,83 @@ For single-team internal use, local + lightweight AWS deploy later is sufficient
 
 ## License
 Internal proprietary (license decision pending; may shift to dual-license model later).
+
+# First Primer Prompt
+# First Primer Prompt
+
+## Stack Configuration
+- **Language**: TypeScript
+- **Framework**: Next.js 14 (App Router) + React 19
+- **Database**: PostgreSQL (via Supabase)
+- **Environment Setup**: Docker (Supabase local), deployed to AWS ECS/Fargate or EC2
+
+### Three Database Environments
+- `dev_db` (local) – Supabase running in Docker  
+- `stage_db` – (to be configured)  
+- `prod_db` – (to be configured)
+
+### Hard Rules I Will Follow
+
+❌ **Never propose:**
+- `DROP DATABASE`
+- `TRUNCATE`
+- “reset all data” operations
+- Any destructive operations without explicit confirmation
+
+✅ **When asked to “fix database” or “clean up data”:**
+1. First: Generate **read-only** queries (`SELECT`) to understand the issue.  
+2. Then: Propose a **migration or patch script** in `supabase/migrations/` or `db/patches/` that is:
+   - Idempotent (safe to run multiple times)
+   - Narrowly scoped with clear `WHERE` clauses
+   - Logged with comments explaining what it changes and why
+
+**Prefer:**
+- Migrations/patches over ad‑hoc destructive SQL  
+- Tests and runbooks over “quick hacks”  
+- Explicit user confirmation before any data modification  
+
+🔒 **Safety-First Approach**
+- Always show what will be affected before modifying  
+- Use transactions where appropriate  
+- Include rollback procedures where possible  
+- Document the rationale in migration files  
+
+
+
+# Using The Help Docs
+## Safe DB help
+
+I need to fix this data issue.
+
+**Constraints:**
+
+Do not propose DROP DATABASE, TRUNCATE, or full resets.
+
+Only use safe, narrow updates and idempotent patches in db/patches/.
+
+- Step 1: Generate only read-only SQL (SELECT) to inspect the problem based on this code/schema.
+- Step 2: After I approve, generate a patch file under db/patches/ following our guidelines.
+
+## Ask it to follow the guidelines doc
+
+Once your copilot-guidelines.md exists:
+---
+When answering, read and follow docs/copilot-guidelines.md and docs/db-patching-guidelines.md.
+Propose changes that match those patterns and avoid anything listed in “Dangerous Operations to Avoid.”
+---
+
+
+## Generate/update docs from code
+
+Based on the current state of this repo, update docs/onboarding.md so it accurately reflects:
+
+- Current setup steps,
+
+- Current scripts in package.json / Makefile,
+
+- Current DB migration workflow.
+
+Show me the full updated markdown so I can paste it into the file.
 
 ---
 *Last Updated: October 24, 2025*# GRC_Platform

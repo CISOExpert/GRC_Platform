@@ -25,6 +25,15 @@ const Sidebar = () => {
                 </svg>
             )
         },
+        {
+            name: 'Framework Info',
+            href: '/framework-info',
+            icon: (
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 01-8 0m8 0a4 4 0 00-8 0m8 0V5a4 4 0 00-8 0v2m8 0v2a4 4 0 01-8 0V7" />
+                </svg>
+            )
+        },
         { 
             name: 'SCF Controls', 
             href: '/frameworks', 
