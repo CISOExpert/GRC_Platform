@@ -2,6 +2,31 @@
 
 import { useDashboardStats } from '@/lib/hooks/useDashboard'
 import Link from 'next/link'
+import { AlertTriangle, Shield, Zap, Cloud, Skull } from 'lucide-react'
+
+// NIST CSF Function colors
+const nistFunctionColors: Record<string, { bg: string; text: string; bar: string }> = {
+  'Govern': { bg: 'bg-violet-100', text: 'text-violet-700', bar: 'bg-violet-500' },
+  'Identify': { bg: 'bg-blue-100', text: 'text-blue-700', bar: 'bg-blue-500' },
+  'Protect': { bg: 'bg-green-100', text: 'text-green-700', bar: 'bg-green-500' },
+  'Detect': { bg: 'bg-yellow-100', text: 'text-yellow-700', bar: 'bg-yellow-500' },
+  'Respond': { bg: 'bg-orange-100', text: 'text-orange-700', bar: 'bg-orange-500' },
+  'Recover': { bg: 'bg-red-100', text: 'text-red-700', bar: 'bg-red-500' },
+  'Unassigned': { bg: 'bg-gray-100', text: 'text-gray-700', bar: 'bg-gray-400' },
+}
+
+// Risk Grouping colors
+const groupingColors: Record<string, { bg: string; text: string; bar: string }> = {
+  'Access Control': { bg: 'bg-blue-50', text: 'text-blue-700', bar: 'bg-blue-500' },
+  'Asset Management': { bg: 'bg-emerald-50', text: 'text-emerald-700', bar: 'bg-emerald-500' },
+  'Business Continuity': { bg: 'bg-amber-50', text: 'text-amber-700', bar: 'bg-amber-500' },
+  'Exposure': { bg: 'bg-red-50', text: 'text-red-700', bar: 'bg-red-500' },
+  'Governance': { bg: 'bg-purple-50', text: 'text-purple-700', bar: 'bg-purple-500' },
+  'Incident Response': { bg: 'bg-orange-50', text: 'text-orange-700', bar: 'bg-orange-500' },
+  'Situational Awareness': { bg: 'bg-cyan-50', text: 'text-cyan-700', bar: 'bg-cyan-500' },
+  'Supply Chain': { bg: 'bg-pink-50', text: 'text-pink-700', bar: 'bg-pink-500' },
+  'Unassigned': { bg: 'bg-gray-50', text: 'text-gray-700', bar: 'bg-gray-400' },
+}
 
 export default function DashboardPage() {
   const { data: stats, isLoading, error } = useDashboardStats()
@@ -30,7 +55,9 @@ export default function DashboardPage() {
     mcrCount,
     domainCount,
     pptdfStats,
-    topDomains
+    topDomains,
+    riskStats,
+    threatStats
   } = stats
 
   return (
@@ -148,6 +175,115 @@ export default function DashboardPage() {
             </div>
           </div>
         </Link>
+      </div>
+
+      {/* Risk & Threat Catalog Cards */}
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 mb-8">
+        {/* Risk Catalog */}
+        <Link href="/explore/risks" className="group">
+          <div className="bg-white dark:bg-gray-800 overflow-hidden shadow-lg rounded-xl hover:shadow-xl transition-all duration-300 border border-gray-200 dark:border-gray-700 group-hover:border-red-500">
+            <div className="p-6">
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Risk Catalog</p>
+                  <p className="text-3xl font-bold text-gray-900 dark:text-gray-100 mt-2">{riskStats.totalRisks}</p>
+                  <p className="text-xs text-red-600 dark:text-red-400 mt-2 font-medium">
+                    {Object.keys(riskStats.byGrouping).length} groupings • {Object.keys(riskStats.byNistFunction).length} NIST functions
+                  </p>
+                </div>
+                <div className="h-12 w-12 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <AlertTriangle className="h-6 w-6 text-red-600 dark:text-red-400" />
+                </div>
+              </div>
+            </div>
+            <div className="bg-gray-50 dark:bg-gray-900/50 px-6 py-3 border-t border-gray-200 dark:border-gray-700">
+              <p className="text-xs text-gray-500 dark:text-gray-400">SCF Risk Taxonomy</p>
+            </div>
+          </div>
+        </Link>
+
+        {/* Threat Catalog */}
+        <Link href="/explore/threats" className="group">
+          <div className="bg-white dark:bg-gray-800 overflow-hidden shadow-lg rounded-xl hover:shadow-xl transition-all duration-300 border border-gray-200 dark:border-gray-700 group-hover:border-orange-500">
+            <div className="p-6">
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Threat Catalog</p>
+                  <p className="text-3xl font-bold text-gray-900 dark:text-gray-100 mt-2">{threatStats.totalThreats}</p>
+                  <div className="flex items-center gap-3 mt-2">
+                    <span className="inline-flex items-center gap-1 text-xs text-teal-600 dark:text-teal-400 font-medium">
+                      <Cloud className="h-3 w-3" />
+                      {threatStats.naturalThreats} Natural
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-xs text-red-600 dark:text-red-400 font-medium">
+                      <Skull className="h-3 w-3" />
+                      {threatStats.manmadeThreats} Man-Made
+                    </span>
+                  </div>
+                </div>
+                <div className="h-12 w-12 bg-orange-100 dark:bg-orange-900/30 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <Zap className="h-6 w-6 text-orange-600 dark:text-orange-400" />
+                </div>
+              </div>
+            </div>
+            <div className="bg-gray-50 dark:bg-gray-900/50 px-6 py-3 border-t border-gray-200 dark:border-gray-700">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {threatStats.materialThreats} material threat{threatStats.materialThreats !== 1 ? 's' : ''}
+              </p>
+            </div>
+          </div>
+        </Link>
+      </div>
+
+      {/* Risk Distribution Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        {/* Risks by NIST CSF Function */}
+        <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Risks by NIST CSF Function</h2>
+          <div className="space-y-3">
+            {Object.entries(riskStats.byNistFunction)
+              .sort(([, a], [, b]) => b - a)
+              .map(([func, count]) => {
+                const percentage = ((count / riskStats.totalRisks) * 100).toFixed(0)
+                const colors = nistFunctionColors[func] || nistFunctionColors['Unassigned']
+                return (
+                  <div key={func}>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className={`font-medium px-2 py-0.5 rounded ${colors.bg} ${colors.text}`}>{func}</span>
+                      <span className="text-gray-600 dark:text-gray-400">{count} ({percentage}%)</span>
+                    </div>
+                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                      <div className={`${colors.bar} h-2 rounded-full transition-all duration-500`} style={{ width: `${percentage}%` }}></div>
+                    </div>
+                  </div>
+                )
+              })}
+          </div>
+        </div>
+
+        {/* Risks by Grouping */}
+        <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Risks by Grouping</h2>
+          <div className="space-y-3">
+            {Object.entries(riskStats.byGrouping)
+              .sort(([, a], [, b]) => b - a)
+              .map(([grouping, count]) => {
+                const percentage = ((count / riskStats.totalRisks) * 100).toFixed(0)
+                const colors = groupingColors[grouping] || groupingColors['Unassigned']
+                return (
+                  <div key={grouping}>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className={`font-medium px-2 py-0.5 rounded ${colors.bg} ${colors.text}`}>{grouping}</span>
+                      <span className="text-gray-600 dark:text-gray-400">{count} ({percentage}%)</span>
+                    </div>
+                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                      <div className={`${colors.bar} h-2 rounded-full transition-all duration-500`} style={{ width: `${percentage}%` }}></div>
+                    </div>
+                  </div>
+                )
+              })}
+          </div>
+        </div>
       </div>
 
       {/* PPTDF Distribution */}

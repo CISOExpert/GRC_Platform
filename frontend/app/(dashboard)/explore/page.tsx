@@ -1,14 +1,52 @@
+'use client'
+
 import Link from 'next/link';
-import { Database, TriangleAlert, Network } from 'lucide-react';
+import { Database, TriangleAlert, Network, Zap } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { createClient } from '@/lib/supabase/client';
 
 export default function ExplorePage() {
+  const supabase = createClient();
+
+  // Fetch dynamic stats
+  const { data: stats } = useQuery({
+    queryKey: ['explore-stats'],
+    queryFn: async () => {
+      const [frameworksResult, mappingsResult, risksResult, threatsResult] = await Promise.all([
+        supabase.from('frameworks').select('id', { count: 'exact', head: true }),
+        supabase.from('framework_crosswalks').select('id', { count: 'exact', head: true }),
+        supabase.from('risks').select('id', { count: 'exact', head: true }).eq('status', 'catalog'),
+        supabase.from('threats').select('id', { count: 'exact', head: true })
+      ]);
+
+      return {
+        frameworkCount: frameworksResult.count || 0,
+        mappingCount: mappingsResult.count || 0,
+        riskCount: risksResult.count || 0,
+        threatCount: threatsResult.count || 0
+      };
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+
+  // Dynamic stats for cards
+  const frameworkMappingStats = stats
+    ? `${stats.mappingCount.toLocaleString()} mappings across ${stats.frameworkCount} frameworks`
+    : 'Loading...';
+  const riskCatalogStats = stats
+    ? `${stats.riskCount} risks in catalog`
+    : 'Loading...';
+  const threatCatalogStats = stats
+    ? `${stats.threatCount} threats in catalog`
+    : 'Loading...';
+
   const explorationTypes = [
     {
       title: 'Framework Mappings',
-      description: 'Explore relationships between SCF controls and 35+ compliance frameworks including NIST, ISO, PCI DSS, and more.',
+      description: `Explore relationships between SCF controls and ${stats?.frameworkCount || '35+'}  compliance frameworks including NIST, ISO, PCI DSS, and more.`,
       icon: Database,
       href: '/explore/frameworks/mappings',
-      stats: '15,025 mappings across 35 frameworks',
+      stats: frameworkMappingStats,
       color: 'blue',
       available: true
     },
@@ -17,18 +55,18 @@ export default function ExplorePage() {
       description: 'Browse the SCF Risk Taxonomy (R-AC, R-GV, R-IR, etc.) and understand risk relationships to controls.',
       icon: TriangleAlert,
       href: '/explore/risks',
-      stats: 'Coming soon',
+      stats: riskCatalogStats,
       color: 'red',
-      available: false
+      available: true
     },
     {
       title: 'Threat Catalog',
-      description: 'Explore network and malicious threat taxonomies (NT-1 through MT-27) mapped to security controls.',
-      icon: TriangleAlert,
+      description: 'Explore natural and man-made threat taxonomies (NT-1 through MT-27) mapped to security controls.',
+      icon: Zap,
       href: '/explore/threats',
-      stats: 'Coming soon',
+      stats: threatCatalogStats,
       color: 'purple',
-      available: false
+      available: true
     },
     {
       title: 'Control Relationships',
@@ -105,19 +143,27 @@ export default function ExplorePage() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
           <div className="bg-white rounded-lg border border-gray-200 p-4">
             <div className="text-sm text-gray-600">Total Frameworks</div>
-            <div className="text-2xl font-bold text-gray-900 mt-1">35</div>
+            <div className="text-2xl font-bold text-gray-900 mt-1">
+              {stats?.frameworkCount?.toLocaleString() ?? '—'}
+            </div>
           </div>
           <div className="bg-white rounded-lg border border-gray-200 p-4">
             <div className="text-sm text-gray-600">Control Mappings</div>
-            <div className="text-2xl font-bold text-gray-900 mt-1">15,025</div>
+            <div className="text-2xl font-bold text-gray-900 mt-1">
+              {stats?.mappingCount?.toLocaleString() ?? '—'}
+            </div>
           </div>
           <div className="bg-white rounded-lg border border-gray-200 p-4">
-            <div className="text-sm text-gray-600">SCF Controls</div>
-            <div className="text-2xl font-bold text-gray-900 mt-1">1,420</div>
+            <div className="text-sm text-gray-600">Risk Catalog</div>
+            <div className="text-2xl font-bold text-red-600 mt-1">
+              {stats?.riskCount?.toLocaleString() ?? '—'}
+            </div>
           </div>
           <div className="bg-white rounded-lg border border-gray-200 p-4">
-            <div className="text-sm text-gray-600">Coverage</div>
-            <div className="text-2xl font-bold text-gray-900 mt-1">79.4%</div>
+            <div className="text-sm text-gray-600">Threat Catalog</div>
+            <div className="text-2xl font-bold text-purple-600 mt-1">
+              {stats?.threatCount?.toLocaleString() ?? '—'}
+            </div>
           </div>
         </div>
 

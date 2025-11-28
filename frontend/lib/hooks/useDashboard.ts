@@ -20,6 +20,18 @@ export type DashboardStats = {
     facilities: number
   }
   topDomains: Array<[string, number]>
+  // Risk & Threat stats
+  riskStats: {
+    totalRisks: number
+    byNistFunction: Record<string, number>
+    byGrouping: Record<string, number>
+  }
+  threatStats: {
+    totalThreats: number
+    naturalThreats: number
+    manmadeThreats: number
+    materialThreats: number
+  }
 }
 
 /**
@@ -63,11 +75,13 @@ export function useDashboardStats() {
       })
       
       // Fetch other stats in parallel
-      const [aoResult, evidenceResult, orgsResult, domainsResult] = await Promise.all([
+      const [aoResult, evidenceResult, orgsResult, domainsResult, risksResult, threatsResult] = await Promise.all([
         supabase.from('assessment_objectives').select('id', { count: 'exact', head: true }),
         supabase.from('evidence_templates').select('id', { count: 'exact', head: true }),
         supabase.from('organizations').select('*').order('created_at', { ascending: false }),
-        supabase.from('scf_controls').select('domain').order('domain')
+        supabase.from('scf_controls').select('domain').order('domain'),
+        supabase.from('risks').select('id, nist_csf_function, risk_grouping, status').eq('status', 'catalog'),
+        supabase.from('threats').select('id, category, is_material_threat')
       ])
 
       const controlsData = leafControls
@@ -102,6 +116,31 @@ export function useDashboardStats() {
         .sort(([, a], [, b]) => b - a)
         .slice(0, 5) as Array<[string, number]>
 
+      // Process risk stats
+      const risks = risksResult.data || []
+      const riskStats = {
+        totalRisks: risks.length,
+        byNistFunction: risks.reduce((acc: Record<string, number>, r) => {
+          const func = r.nist_csf_function || 'Unassigned'
+          acc[func] = (acc[func] || 0) + 1
+          return acc
+        }, {}),
+        byGrouping: risks.reduce((acc: Record<string, number>, r) => {
+          const grouping = r.risk_grouping || 'Unassigned'
+          acc[grouping] = (acc[grouping] || 0) + 1
+          return acc
+        }, {})
+      }
+
+      // Process threat stats
+      const threats = threatsResult.data || []
+      const threatStats = {
+        totalThreats: threats.length,
+        naturalThreats: threats.filter(t => t.category === 'natural').length,
+        manmadeThreats: threats.filter(t => t.category === 'manmade').length,
+        materialThreats: threats.filter(t => t.is_material_threat).length
+      }
+
       return {
         controlsCount,
         aoCount,
@@ -110,7 +149,9 @@ export function useDashboardStats() {
         mcrCount,
         domainCount,
         pptdfStats,
-        topDomains
+        topDomains,
+        riskStats,
+        threatStats
       } as DashboardStats
     },
     staleTime: 2 * 60 * 1000, // 2 minutes - dashboard updates less frequently

@@ -560,23 +560,21 @@ export function useControlMappingsByFrameworkGrouped(
           .eq('id', frameworkId)
           .single()
 
-        // Get mappings FROM SCF TO these external controls using framework_crosswalks
-        const externalControlIds = externalControls.map((c: any) => c.id)
+        // Get mappings FROM SCF TO this framework using framework_crosswalks
+        // Use target_framework_id filter instead of IN clause to avoid query size limits
         let mappingsData: any[] = []
 
-        if (externalControlIds.length > 0) {
-          const mappingsQuery = supabase
-            .from('framework_crosswalks')
-            .select(`
-              *,
-              source_control:source_control_id (id, ref_code, title, description, metadata, display_order)
-            `)
-            .eq('source_framework_id', scfFrameworkId)
-            .in('target_control_id', externalControlIds)
+        const mappingsQuery = supabase
+          .from('framework_crosswalks')
+          .select(`
+            *,
+            source_control:source_control_id (id, ref_code, title, description, metadata, display_order)
+          `)
+          .eq('source_framework_id', scfFrameworkId)
+          .eq('target_framework_id', frameworkId)
 
-          mappingsData = await fetchAllData(mappingsQuery)
-          console.log('[useControlMappingsByFrameworkGrouped] Found', mappingsData.length, 'mappings from SCF')
-        }
+        mappingsData = await fetchAllData(mappingsQuery)
+        console.log('[useControlMappingsByFrameworkGrouped] Found', mappingsData.length, 'mappings from SCF')
 
         // Group mappings by target control
         const mappingsByExtControl = mappingsData.reduce((acc: any, m: any) => {
