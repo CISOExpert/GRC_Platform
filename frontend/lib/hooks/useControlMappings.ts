@@ -512,7 +512,7 @@ export function useControlMappingsByFrameworkGrouped(
         // FOR SCF PRIMARY: Load all SCF controls from external_controls (unified)
         const scfQuery = supabase
           .from('external_controls')
-          .select('id, ref_code, title, description, metadata, parent_id, display_order')
+          .select('id, ref_code, title, description, metadata, parent_id, display_order, risk_count, threat_count')
           .eq('framework_id', frameworkId)
 
         const scfControls = await fetchAllData(scfQuery)
@@ -546,7 +546,7 @@ export function useControlMappingsByFrameworkGrouped(
         // EXTERNAL FRAMEWORK as primary: Load external_controls for this framework
         const externalControlsQuery = supabase
           .from('external_controls')
-          .select('id, ref_code, title, description, metadata, parent_id, hierarchy_level, display_order')
+          .select('id, ref_code, title, description, metadata, parent_id, hierarchy_level, display_order, risk_count, threat_count')
           .eq('framework_id', frameworkId)
           .order('display_order', { ascending: true })
 

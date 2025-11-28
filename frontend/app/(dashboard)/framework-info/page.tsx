@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useFrameworks, useFrameworkStats, useFrameworkDetails } from '@/lib/hooks/useFrameworks'
 import { useControlMappingsByFrameworkGrouped } from '@/lib/hooks/useControlMappings'
 import { createClient } from '@/lib/supabase/client'
@@ -128,6 +128,7 @@ export default function FrameworkInfoPage() {
   const [threatsLoading, setThreatsLoading] = useState(false)
   const [threatStats, setThreatStats] = useState<ThreatStats | null>(null)
   const [threatStatsLoading, setThreatStatsLoading] = useState(false)
+  const [riskThreatFilter, setRiskThreatFilter] = useState('')
 
   const info = frameworks.find(fw => fw.id === selectedFramework) || null
   const { data: stats, isLoading: statsLoading } = useFrameworkStats(selectedFramework)
@@ -344,6 +345,30 @@ export default function FrameworkInfoPage() {
     fetchThreatStats()
   }, [selectedFramework])
 
+  // Filter risks and threats based on keyword search
+  const filteredRisks = useMemo(() => {
+    if (!riskThreatFilter.trim()) return relatedRisks
+    const searchTerm = riskThreatFilter.toLowerCase()
+    return relatedRisks.filter(risk =>
+      (risk.risk_id?.toLowerCase() || '').includes(searchTerm) ||
+      (risk.title?.toLowerCase() || '').includes(searchTerm) ||
+      (risk.description?.toLowerCase() || '').includes(searchTerm) ||
+      (risk.category?.toLowerCase() || '').includes(searchTerm)
+    )
+  }, [relatedRisks, riskThreatFilter])
+
+  const filteredThreats = useMemo(() => {
+    if (!riskThreatFilter.trim()) return relatedThreats
+    const searchTerm = riskThreatFilter.toLowerCase()
+    return relatedThreats.filter(threat =>
+      (threat.threat_id?.toLowerCase() || '').includes(searchTerm) ||
+      (threat.name?.toLowerCase() || '').includes(searchTerm) ||
+      (threat.description?.toLowerCase() || '').includes(searchTerm) ||
+      (threat.category?.toLowerCase() || '').includes(searchTerm) ||
+      (threat.threat_grouping?.toLowerCase() || '').includes(searchTerm)
+    )
+  }, [relatedThreats, riskThreatFilter])
+
   // Fetch related risks and threats when control is selected
   useEffect(() => {
     if (!selectedControl || selectedControl.scfMappings.length === 0) {
@@ -443,6 +468,8 @@ export default function FrameworkInfoPage() {
       description: node.description || '',
       scfMappings: node.scfMappings || []
     })
+    // Clear filter when selecting a new control
+    setRiskThreatFilter('')
   }
 
   // Recursive render function for hierarchy
@@ -453,6 +480,11 @@ export default function FrameworkInfoPage() {
     const displayName = getDisplayName(node, refCode)
     const childCount = hasChildren ? Object.keys(node.children).length : 0
     const isSelected = selectedControl?.refCode === refCode
+
+    // Get risk/threat counts from node (populated from external_controls)
+    const riskCount = node.risk_count || 0
+    const threatCount = node.threat_count || 0
+    const hasCounts = riskCount > 0 || threatCount > 0
 
     return (
       <div key={key} style={{ marginLeft: level * 16 }}>
@@ -481,11 +513,29 @@ export default function FrameworkInfoPage() {
             )}
             <span className="truncate">{displayName ? `${displayName} (${refCode})` : refCode}</span>
           </div>
-          {hasChildren && (
-            <span className="text-xs text-gray-500 dark:text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ml-2">
-              {childCount}
-            </span>
-          )}
+          <div className="flex items-center gap-1 flex-shrink-0 ml-2">
+            {/* Risk/Threat count badges */}
+            {hasCounts && (
+              <div className="flex items-center gap-1">
+                {riskCount > 0 && (
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 font-normal">
+                    {riskCount}R
+                  </span>
+                )}
+                {threatCount > 0 && (
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300 font-normal">
+                    {threatCount}T
+                  </span>
+                )}
+              </div>
+            )}
+            {/* Child count on hover */}
+            {hasChildren && (
+              <span className="text-xs text-gray-500 dark:text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                {childCount}
+              </span>
+            )}
+          </div>
         </button>
         {isOpen && hasChildren && (
           <div className="mt-1 space-y-1">
@@ -899,12 +949,43 @@ export default function FrameworkInfoPage() {
             {/* Right Panel: Control Details */}
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
               <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                  Control Details
-                </h3>
-                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  {selectedControl ? selectedControl.refCode : 'Select a control to view details'}
-                </p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                      Control Details
+                    </h3>
+                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                      {selectedControl ? selectedControl.refCode : 'Select a control to view details'}
+                    </p>
+                  </div>
+                  {/* Risk/Threat keyword filter */}
+                  {selectedControl && (relatedRisks.length > 0 || relatedThreats.length > 0) && (
+                    <div className="flex-shrink-0">
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="Filter risks/threats..."
+                          value={riskThreatFilter}
+                          onChange={(e) => setRiskThreatFilter(e.target.value)}
+                          className="w-48 pl-8 pr-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                        />
+                        <svg className="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        {riskThreatFilter && (
+                          <button
+                            onClick={() => setRiskThreatFilter('')}
+                            className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="p-4 max-h-[600px] overflow-y-auto">
                 {!selectedControl ? (
@@ -991,9 +1072,18 @@ export default function FrameworkInfoPage() {
 
                     {/* Related Risks */}
                     <div>
-                      <h5 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">
-                        Related Risks
-                      </h5>
+                      <div className="flex items-center justify-between mb-2">
+                        <h5 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
+                          Related Risks
+                          {relatedRisks.length > 0 && (
+                            <span className="ml-2 text-xs font-normal text-gray-500 dark:text-gray-400">
+                              {riskThreatFilter && filteredRisks.length !== relatedRisks.length
+                                ? `(${filteredRisks.length} of ${relatedRisks.length})`
+                                : `(${relatedRisks.length})`}
+                            </span>
+                          )}
+                        </h5>
+                      </div>
                       {risksLoading ? (
                         <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 text-sm">
                           <div className="animate-spin h-4 w-4 border-2 border-indigo-500 border-t-transparent rounded-full"></div>
@@ -1005,9 +1095,13 @@ export default function FrameworkInfoPage() {
                             ? 'No SCF mappings, so no linked risks.'
                             : 'No risks linked to the associated SCF controls.'}
                         </p>
+                      ) : filteredRisks.length === 0 ? (
+                        <p className="text-gray-500 dark:text-gray-400 text-sm">
+                          No risks match the filter "{riskThreatFilter}"
+                        </p>
                       ) : (
                         <div className="space-y-2">
-                          {relatedRisks.map((risk) => (
+                          {filteredRisks.map((risk) => (
                             <div
                               key={risk.id}
                               className="p-3 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-100 dark:border-red-800"
@@ -1040,9 +1134,18 @@ export default function FrameworkInfoPage() {
 
                     {/* Related Threats */}
                     <div>
-                      <h5 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">
-                        Related Threats
-                      </h5>
+                      <div className="flex items-center justify-between mb-2">
+                        <h5 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
+                          Related Threats
+                          {relatedThreats.length > 0 && (
+                            <span className="ml-2 text-xs font-normal text-gray-500 dark:text-gray-400">
+                              {riskThreatFilter && filteredThreats.length !== relatedThreats.length
+                                ? `(${filteredThreats.length} of ${relatedThreats.length})`
+                                : `(${relatedThreats.length})`}
+                            </span>
+                          )}
+                        </h5>
+                      </div>
                       {threatsLoading ? (
                         <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 text-sm">
                           <div className="animate-spin h-4 w-4 border-2 border-purple-500 border-t-transparent rounded-full"></div>
@@ -1054,9 +1157,13 @@ export default function FrameworkInfoPage() {
                             ? 'No SCF mappings, so no linked threats.'
                             : 'No threats linked to the associated SCF controls.'}
                         </p>
+                      ) : filteredThreats.length === 0 ? (
+                        <p className="text-gray-500 dark:text-gray-400 text-sm">
+                          No threats match the filter "{riskThreatFilter}"
+                        </p>
                       ) : (
                         <div className="space-y-2">
-                          {relatedThreats.map((threat) => (
+                          {filteredThreats.map((threat) => (
                             <div
                               key={threat.id}
                               className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-100 dark:border-purple-800"
