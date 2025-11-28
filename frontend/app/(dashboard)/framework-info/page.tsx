@@ -94,10 +94,25 @@ type Risk = {
   category: string
 }
 
+type Threat = {
+  id: string
+  threat_id: string
+  name: string
+  description: string
+  category: string
+  threat_grouping: string
+}
+
 type RiskStats = {
   totalRisks: number
   byCategory: Record<string, number>
   byStatus: Record<string, number>
+}
+
+type ThreatStats = {
+  totalThreats: number
+  byCategory: Record<string, number>
+  byGrouping: Record<string, number>
 }
 
 export default function FrameworkInfoPage() {
@@ -109,6 +124,10 @@ export default function FrameworkInfoPage() {
   const [risksLoading, setRisksLoading] = useState(false)
   const [riskStats, setRiskStats] = useState<RiskStats | null>(null)
   const [riskStatsLoading, setRiskStatsLoading] = useState(false)
+  const [relatedThreats, setRelatedThreats] = useState<Threat[]>([])
+  const [threatsLoading, setThreatsLoading] = useState(false)
+  const [threatStats, setThreatStats] = useState<ThreatStats | null>(null)
+  const [threatStatsLoading, setThreatStatsLoading] = useState(false)
 
   const info = frameworks.find(fw => fw.id === selectedFramework) || null
   const { data: stats, isLoading: statsLoading } = useFrameworkStats(selectedFramework)
@@ -228,52 +247,167 @@ export default function FrameworkInfoPage() {
     fetchRiskStats()
   }, [selectedFramework])
 
-  // Fetch related risks when control is selected
+  // Fetch threat statistics for the framework
   useEffect(() => {
-    if (!selectedControl || selectedControl.scfMappings.length === 0) {
-      setRelatedRisks([])
+    if (!selectedFramework) {
+      setThreatStats(null)
       return
     }
 
-    const fetchRisks = async () => {
-      setRisksLoading(true)
+    const fetchThreatStats = async () => {
+      setThreatStatsLoading(true)
       const supabase = createClient()
 
-      // Get SCF control IDs from mappings
+      console.log('[ThreatStats] Fetching threat stats for framework:', selectedFramework)
+
+      // Get SCF framework ID
+      const { data: scfFramework, error: scfError } = await supabase
+        .from('frameworks')
+        .select('id')
+        .eq('code', 'SCF')
+        .single()
+
+      if (scfError || !scfFramework) {
+        console.log('[ThreatStats] No SCF framework found')
+        setThreatStats(null)
+        setThreatStatsLoading(false)
+        return
+      }
+
+      // Get all SCF control IDs that map to this framework
+      const { data: crosswalks, error: crosswalkError } = await supabase
+        .from('framework_crosswalks')
+        .select('source_control_id')
+        .eq('source_framework_id', scfFramework.id)
+        .eq('target_framework_id', selectedFramework)
+
+      if (crosswalkError || !crosswalks || crosswalks.length === 0) {
+        console.log('[ThreatStats] No crosswalks found for framework')
+        setThreatStats({ totalThreats: 0, byCategory: {}, byGrouping: {} })
+        setThreatStatsLoading(false)
+        return
+      }
+
+      const scfControlIds = [...new Set(crosswalks.map(c => c.source_control_id).filter(Boolean))]
+      console.log('[ThreatStats] Found', scfControlIds.length, 'unique SCF control IDs')
+
+      // Get all threat IDs linked to these SCF controls
+      const { data: threatControls, error: threatControlsError } = await supabase
+        .from('threat_controls')
+        .select('threat_id')
+        .in('control_id', scfControlIds)
+
+      if (threatControlsError || !threatControls || threatControls.length === 0) {
+        console.log('[ThreatStats] No threat_controls found')
+        setThreatStats({ totalThreats: 0, byCategory: {}, byGrouping: {} })
+        setThreatStatsLoading(false)
+        return
+      }
+
+      const threatIds = [...new Set(threatControls.map(tc => tc.threat_id))]
+      console.log('[ThreatStats] Found', threatIds.length, 'unique threat IDs')
+
+      // Get the threats with their details
+      const { data: threats, error: threatsError } = await supabase
+        .from('threats')
+        .select('id, category, threat_grouping')
+        .in('id', threatIds)
+
+      if (threatsError || !threats || threats.length === 0) {
+        console.log('[ThreatStats] No threats found')
+        setThreatStats({ totalThreats: 0, byCategory: {}, byGrouping: {} })
+        setThreatStatsLoading(false)
+        return
+      }
+
+      console.log('[ThreatStats] Found', threats.length, 'threats')
+
+      // Aggregate stats
+      const byCategory: Record<string, number> = {}
+      const byGrouping: Record<string, number> = {}
+
+      threats.forEach(threat => {
+        const cat = threat.category || 'unknown'
+        const grouping = threat.threat_grouping || 'ungrouped'
+        byCategory[cat] = (byCategory[cat] || 0) + 1
+        byGrouping[grouping] = (byGrouping[grouping] || 0) + 1
+      })
+
+      setThreatStats({
+        totalThreats: threats.length,
+        byCategory,
+        byGrouping
+      })
+      setThreatStatsLoading(false)
+    }
+
+    fetchThreatStats()
+  }, [selectedFramework])
+
+  // Fetch related risks and threats when control is selected
+  useEffect(() => {
+    if (!selectedControl || selectedControl.scfMappings.length === 0) {
+      setRelatedRisks([])
+      setRelatedThreats([])
+      return
+    }
+
+    const fetchRisksAndThreats = async () => {
+      setRisksLoading(true)
+      setThreatsLoading(true)
+      const supabase = createClient()
+
+      // Get SCF control IDs from mappings - support both old (scf_control) and new (source_control_id) schema
       const scfControlIds = selectedControl.scfMappings
-        .map(m => m.scf_control?.id)
+        .map(m => m.source_control_id || m.scf_control?.id)
         .filter(Boolean)
 
       if (scfControlIds.length === 0) {
         setRelatedRisks([])
+        setRelatedThreats([])
         setRisksLoading(false)
+        setThreatsLoading(false)
         return
       }
 
-      // Get risks linked to these SCF controls
+      // Fetch risks linked to these SCF controls
       const { data: riskControls } = await supabase
         .from('risk_controls')
         .select('risk_id')
         .in('control_id', scfControlIds)
 
-      if (!riskControls || riskControls.length === 0) {
+      if (riskControls && riskControls.length > 0) {
+        const riskIds = [...new Set(riskControls.map(rc => rc.risk_id))]
+        const { data: risks } = await supabase
+          .from('risks')
+          .select('id, risk_id, title, description, category')
+          .in('id', riskIds)
+        setRelatedRisks(risks || [])
+      } else {
         setRelatedRisks([])
-        setRisksLoading(false)
-        return
       }
-
-      const riskIds = [...new Set(riskControls.map(rc => rc.risk_id))]
-
-      const { data: risks } = await supabase
-        .from('risks')
-        .select('id, risk_id, title, description, category')
-        .in('id', riskIds)
-
-      setRelatedRisks(risks || [])
       setRisksLoading(false)
+
+      // Fetch threats linked to these SCF controls
+      const { data: threatControls } = await supabase
+        .from('threat_controls')
+        .select('threat_id')
+        .in('control_id', scfControlIds)
+
+      if (threatControls && threatControls.length > 0) {
+        const threatIds = [...new Set(threatControls.map(tc => tc.threat_id))]
+        const { data: threats } = await supabase
+          .from('threats')
+          .select('id, threat_id, name, description, category, threat_grouping')
+          .in('id', threatIds)
+        setRelatedThreats(threats || [])
+      } else {
+        setRelatedThreats([])
+      }
+      setThreatsLoading(false)
     }
 
-    fetchRisks()
+    fetchRisksAndThreats()
   }, [selectedControl])
 
   if (isLoading) {
@@ -637,6 +771,103 @@ export default function FrameworkInfoPage() {
             </div>
           )}
 
+          {/* Threat Statistics Dashboard */}
+          {threatStats && threatStats.totalThreats > 0 && (
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+                <div className="flex items-center gap-2">
+                  <svg className="w-5 h-5 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                    Threat Analysis
+                  </h3>
+                </div>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  Threats linked to this framework via SCF control mappings
+                </p>
+              </div>
+              <div className="p-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Total Threats */}
+                  <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4 border border-purple-100 dark:border-purple-800">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium text-purple-600 dark:text-purple-400">Total Threats</p>
+                      <svg className="w-5 h-5 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                    </div>
+                    <p className="mt-2 text-3xl font-bold text-purple-700 dark:text-purple-300">
+                      {threatStats.totalThreats}
+                    </p>
+                    <p className="mt-1 text-xs text-purple-500 dark:text-purple-400">
+                      Linked via SCF controls
+                    </p>
+                  </div>
+
+                  {/* By Category (Natural vs Manmade) */}
+                  <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-100 dark:border-blue-800">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-medium text-blue-600 dark:text-blue-400">By Category</p>
+                      <svg className="w-5 h-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                      </svg>
+                    </div>
+                    <div className="space-y-1">
+                      {Object.entries(threatStats.byCategory).map(([category, count]) => (
+                        <div key={category} className="flex items-center justify-between text-sm">
+                          <span className="text-gray-600 dark:text-gray-400 capitalize truncate mr-2">
+                            {category === 'natural' ? '🌪️ Natural' : category === 'manmade' ? '👤 Manmade' : category}
+                          </span>
+                          <span className="font-semibold text-blue-700 dark:text-blue-300 flex-shrink-0">{count}</span>
+                        </div>
+                      ))}
+                      {Object.keys(threatStats.byCategory).length === 0 && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400">No categories</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* By Grouping */}
+                  <div className="bg-teal-50 dark:bg-teal-900/20 rounded-lg p-4 border border-teal-100 dark:border-teal-800">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-medium text-teal-600 dark:text-teal-400">By Grouping</p>
+                      <svg className="w-5 h-5 text-teal-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                      </svg>
+                    </div>
+                    <div className="space-y-1 max-h-24 overflow-y-auto">
+                      {Object.entries(threatStats.byGrouping).slice(0, 5).map(([grouping, count]) => (
+                        <div key={grouping} className="flex items-center justify-between text-sm">
+                          <span className="text-gray-600 dark:text-gray-400 truncate mr-2">{grouping}</span>
+                          <span className="font-semibold text-teal-700 dark:text-teal-300 flex-shrink-0">{count}</span>
+                        </div>
+                      ))}
+                      {Object.keys(threatStats.byGrouping).length > 5 && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          +{Object.keys(threatStats.byGrouping).length - 5} more groupings
+                        </p>
+                      )}
+                      {Object.keys(threatStats.byGrouping).length === 0 && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400">No groupings</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Threat Stats Loading State */}
+          {threatStatsLoading && (
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+              <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
+                <div className="animate-spin h-4 w-4 border-2 border-purple-500 border-t-transparent rounded-full"></div>
+                Loading threat statistics...
+              </div>
+            </div>
+          )}
+
           {/* Split View: Domains & Controls + Details Panel */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Left Panel: Domains & Controls Hierarchy */}
@@ -799,6 +1030,64 @@ export default function FrameworkInfoPage() {
                               {risk.description && (
                                 <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
                                   {risk.description}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Related Threats */}
+                    <div>
+                      <h5 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">
+                        Related Threats
+                      </h5>
+                      {threatsLoading ? (
+                        <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 text-sm">
+                          <div className="animate-spin h-4 w-4 border-2 border-purple-500 border-t-transparent rounded-full"></div>
+                          Loading threats...
+                        </div>
+                      ) : relatedThreats.length === 0 ? (
+                        <p className="text-gray-500 dark:text-gray-400 text-sm">
+                          {selectedControl.scfMappings.length === 0
+                            ? 'No SCF mappings, so no linked threats.'
+                            : 'No threats linked to the associated SCF controls.'}
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {relatedThreats.map((threat) => (
+                            <div
+                              key={threat.id}
+                              className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-100 dark:border-purple-800"
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-purple-700 dark:text-purple-300 font-semibold text-sm">
+                                  {threat.threat_id || threat.name}
+                                </span>
+                                {threat.category && (
+                                  <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                    threat.category === 'natural'
+                                      ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                                      : 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'
+                                  }`}>
+                                    {threat.category === 'natural' ? '🌪️ Natural' : '👤 Manmade'}
+                                  </span>
+                                )}
+                              </div>
+                              {threat.name && threat.threat_id && (
+                                <p className="text-sm text-gray-700 dark:text-gray-300 mt-1 font-medium">
+                                  {threat.name}
+                                </p>
+                              )}
+                              {threat.threat_grouping && (
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                  Grouping: {threat.threat_grouping}
+                                </p>
+                              )}
+                              {threat.description && (
+                                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
+                                  {threat.description}
                                 </p>
                               )}
                             </div>
