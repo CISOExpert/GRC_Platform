@@ -3,6 +3,8 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useFrameworks, useFrameworkStats, useFrameworkDetails } from '@/lib/hooks/useFrameworks'
 import { useControlMappingsByFrameworkGrouped } from '@/lib/hooks/useControlMappings'
+import { useSCFDomainMetadata } from '@/lib/hooks/useFrameworkMetadata'
+import { SCFDomainMetadata } from '@/components/DynamicMetadata'
 import { createClient } from '@/lib/supabase/client'
 
 // Framework metadata lookup (can be moved to database later)
@@ -137,6 +139,21 @@ export default function FrameworkInfoPage() {
 
   // Get metadata for selected framework
   const metadata = info ? frameworkMetadata[info.code] || frameworkMetadata[info.code.split('-')[0]] : null
+
+  // Get SCF domain metadata for the selected control
+  // Use the control's refCode if viewing SCF, or the first SCF mapping's control_id otherwise
+  const scfRefCodeForMetadata = useMemo(() => {
+    if (!selectedControl) return undefined
+    // If viewing SCF framework directly, use the control's refCode
+    if (info?.code === 'SCF') {
+      return selectedControl.refCode
+    }
+    // Otherwise, use the first SCF mapping's control_id
+    const firstMapping = selectedControl.scfMappings?.[0]
+    return firstMapping?.scf_control?.control_id || firstMapping?.source_ref
+  }, [selectedControl, info?.code])
+
+  const { data: scfDomainMetadata, isLoading: domainMetadataLoading } = useSCFDomainMetadata(scfRefCodeForMetadata)
 
   // Fetch risk statistics for the framework
   useEffect(() => {
@@ -1021,6 +1038,28 @@ export default function FrameworkInfoPage() {
                           : 'No description available for this control.'}
                       </p>
                     </div>
+
+                    {/* SCF Domain Info - shows principles and intent */}
+                    {scfDomainMetadata?.metadata && (
+                      <div className="p-4 bg-indigo-50/50 dark:bg-indigo-900/10 rounded-lg border border-indigo-100 dark:border-indigo-800/50">
+                        <h5 className="text-sm font-semibold text-indigo-700 dark:text-indigo-300 uppercase tracking-wide mb-3 flex items-center gap-2">
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          SCF Domain Context
+                        </h5>
+                        <SCFDomainMetadata
+                          metadata={scfDomainMetadata.metadata}
+                          className="text-sm"
+                        />
+                      </div>
+                    )}
+                    {domainMetadataLoading && (
+                      <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 text-sm p-3">
+                        <div className="animate-spin h-4 w-4 border-2 border-indigo-500 border-t-transparent rounded-full"></div>
+                        Loading domain context...
+                      </div>
+                    )}
 
                     {/* Authoritative Source (SCF Mappings) */}
                     <div>
