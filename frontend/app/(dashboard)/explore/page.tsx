@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Database, Shield, AlertTriangle, Network } from 'lucide-react';
+import { Database, TriangleAlert, Network } from 'lucide-react';
 
 export default function ExplorePage() {
   const explorationTypes = [
@@ -15,7 +15,7 @@ export default function ExplorePage() {
     {
       title: 'Risk Catalog',
       description: 'Browse the SCF Risk Taxonomy (R-AC, R-GV, R-IR, etc.) and understand risk relationships to controls.',
-      icon: AlertTriangle,
+      icon: TriangleAlert,
       href: '/explore/risks',
       stats: 'Coming soon',
       color: 'red',
@@ -24,7 +24,7 @@ export default function ExplorePage() {
     {
       title: 'Threat Catalog',
       description: 'Explore network and malicious threat taxonomies (NT-1 through MT-27) mapped to security controls.',
-      icon: Shield,
+      icon: TriangleAlert,
       href: '/explore/threats',
       stats: 'Coming soon',
       color: 'purple',

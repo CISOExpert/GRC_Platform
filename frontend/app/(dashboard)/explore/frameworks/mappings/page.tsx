@@ -38,6 +38,9 @@ export default function FrameworkMappingsPage() {
   // Build framework IDs for additional frameworks (used when displayMode=expanded and 2+)
   const additionalFrameworkIds = Array.from(additionalFrameworks)
   const shouldShowCompareToSelector = displayMode === 'expanded' && additionalFrameworkIds.length >= 2
+
+  // Check if SCF is explicitly selected in additional frameworks (to control when SCF mappings are shown)
+  const isSCFInAdditional = scfFramework && additionalFrameworkIds.includes(scfFramework.id)
   
   // Auto-set compareToFramework to first additional if not already set
   const effectiveCompareToFramework = shouldShowCompareToSelector 
@@ -117,6 +120,25 @@ export default function FrameworkMappingsPage() {
     }
   }, [frameworks, primaryFramework])
 
+  // Handle primary framework change - also remove from additional if it was selected there
+  const handlePrimaryFrameworkChange = (newPrimaryId: string) => {
+    setPrimaryFramework(newPrimaryId)
+
+    // Remove the new primary from additional frameworks if it was selected
+    if (additionalFrameworks.has(newPrimaryId)) {
+      setAdditionalFrameworks(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(newPrimaryId)
+        return newSet
+      })
+
+      // Also clear compareToFramework if it was the same
+      if (compareToFramework === newPrimaryId) {
+        setCompareToFramework('')
+      }
+    }
+  }
+
   const toggleFramework = (frameworkId: string) => {
     setAdditionalFrameworks(prev => {
       const newSet = new Set(prev)
@@ -155,11 +177,11 @@ export default function FrameworkMappingsPage() {
   const renderFrameworkNode = (nodeKey: string, node: any, depth = 0) => {
     const isExpanded = expandedItems.has(nodeKey)
     const hasChildren = node.children && Object.keys(node.children).length > 0
-    // Don't show scfMappings when SCF is primary (they're self-references)
-    const hasSCFMappings = !isPrimarySCF && node.scfMappings && node.scfMappings.length > 0
+    // Only show scfMappings when SCF is explicitly selected in additional frameworks (not just because primary isn't SCF)
+    const hasSCFMappings = !isPrimarySCF && isSCFInAdditional && node.scfMappings && node.scfMappings.length > 0
     const hasComparisonMappings = node.comparisonMappings && node.comparisonMappings.length > 0
     const hasRelatedMappings = node.relatedMappings && node.relatedMappings.length > 0
-    const totalSCFMappings = !isPrimarySCF ? (node.scfMappings?.length || 0) : 0
+    const totalSCFMappings = !isPrimarySCF && isSCFInAdditional ? (node.scfMappings?.length || 0) : 0
     const totalRelatedMappings = node.relatedMappings?.length || 0
     
     // Calculate mapping statistics for display
@@ -201,9 +223,9 @@ export default function FrameworkMappingsPage() {
       })
     }
     
-    // Count total SCF mappings including children (exclude when SCF is primary - they're self-references)
+    // Count total SCF mappings including children (only when SCF is explicitly selected in additional frameworks)
     const countTotalMappings = (n: any): number => {
-      let count = !isPrimarySCF ? (n.scfMappings?.length || 0) : 0
+      let count = !isPrimarySCF && isSCFInAdditional ? (n.scfMappings?.length || 0) : 0
       if (n.children) {
         Object.values(n.children).forEach((child: any) => {
           count += countTotalMappings(child)
@@ -278,10 +300,10 @@ export default function FrameworkMappingsPage() {
               </div>
               <div className="flex-1">
                 <div className={`font-mono text-sm font-semibold ${colorScheme.ref}`}>
-                  {node.ref_code}
-                  {hasChildren && <span className="ml-2 text-xs text-gray-500">({Object.keys(node.children).length} items)</span>}
+                  {node.title || node.ref_code}
+                  {hasChildren && <span className="ml-2 text-xs text-gray-500 font-normal">({Object.keys(node.children).length} items)</span>}
                 </div>
-                {node.description && node.description !== node.ref_code && (
+                {node.description && node.description !== node.ref_code && node.description !== node.title && (
                   <div className="text-sm text-gray-700 dark:text-gray-300 mt-1">
                     {node.description}
                   </div>
@@ -698,8 +720,8 @@ export default function FrameworkMappingsPage() {
       
       if (shouldCount) {
         totalControls++
-        // When SCF is primary, ignore scfMappings (they're self-references)
-        const scfMappingCount = isPrimarySCF ? 0 : (node.scfMappings?.length || 0)
+        // Only count SCF mappings when SCF is explicitly selected in additional frameworks
+        const scfMappingCount = isPrimarySCF || !isSCFInAdditional ? 0 : (node.scfMappings?.length || 0)
         const hasMappings = scfMappingCount + (node.comparisonMappings?.length || 0) + (node.relatedMappings?.length || 0) > 0
         if (hasMappings) {
           controlsWithMappings++
@@ -765,26 +787,66 @@ export default function FrameworkMappingsPage() {
       controlsWithoutMappings: totalControls - controlsWithMappings,
       selectedFrameworkCount: additionalFrameworks.size
     }
-  }, [groupedMappings, frameworks, primaryFramework, additionalFrameworks, isPrimarySCF, includeOrganizationalControls])
+  }, [groupedMappings, frameworks, primaryFramework, additionalFrameworks, isPrimarySCF, isSCFInAdditional, includeOrganizationalControls])
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex">
-      {/* Filter Panel */}
-      {showFilterPanel && (
-        <div 
-          className="w-80 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 p-6 overflow-y-auto"
-          style={{ width: `${filterPanelWidth}px` }}
-        >
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-              Show Additional Mappings
+      {/* Filter Panel - Collapsible */}
+      <div
+        className={`bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col transition-all duration-300 ${
+          showFilterPanel ? 'w-80' : 'w-12'
+        }`}
+      >
+        {/* Collapse Toggle - Always visible */}
+        <div className={`flex items-center ${showFilterPanel ? 'justify-between p-4 border-b border-gray-200 dark:border-gray-700' : 'justify-center p-2'}`}>
+          {showFilterPanel && (
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+              Additional Mappings
+              {additionalFrameworks.size > 0 && (
+                <span className="px-2 py-0.5 text-xs font-medium bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-full">
+                  {additionalFrameworks.size}
+                </span>
+              )}
             </h3>
-            {additionalFrameworks.size > 0 && (
-              <span className="px-2 py-1 text-xs font-medium bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-full">
-                {additionalFrameworks.size}
-              </span>
+          )}
+          <button
+            onClick={() => setShowFilterPanel(!showFilterPanel)}
+            className="p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 transition-colors"
+            title={showFilterPanel ? 'Collapse panel' : 'Expand panel'}
+          >
+            {showFilterPanel ? (
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+              </svg>
+            ) : (
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+              </svg>
             )}
+          </button>
+        </div>
+
+        {/* Collapsed state - show icon indicators */}
+        {!showFilterPanel && (
+          <div className="flex flex-col items-center py-4 gap-3">
+            <div className="relative" title={`${additionalFrameworks.size} frameworks selected`}>
+              <svg className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+              </svg>
+              {additionalFrameworks.size > 0 && (
+                <span className="absolute -top-1 -right-1 h-4 w-4 text-xs font-medium bg-indigo-600 text-white rounded-full flex items-center justify-center">
+                  {additionalFrameworks.size}
+                </span>
+              )}
+            </div>
           </div>
+        )}
+
+        {/* Panel Content - only when expanded */}
+        {showFilterPanel && (
+          <div className="flex-1 overflow-y-auto p-4">
+            <div className="flex items-center justify-between mb-4">
+            </div>
           
           {/* Search Input */}
           <div className="mb-4 relative">
@@ -874,8 +936,9 @@ export default function FrameworkMappingsPage() {
               Clear all filters
             </button>
           )}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
@@ -910,15 +973,6 @@ export default function FrameworkMappingsPage() {
                 </svg>
                 Save View
               </button>
-              <button
-                onClick={() => setShowFilterPanel(!showFilterPanel)}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600"
-              >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                </svg>
-                {showFilterPanel ? 'Hide' : 'Show'} Additional Mappings
-              </button>
             </div>
           </div>
 
@@ -931,7 +985,7 @@ export default function FrameworkMappingsPage() {
               </label>
               <select
                 value={primaryFramework}
-                onChange={(e) => setPrimaryFramework(e.target.value)}
+                onChange={(e) => handlePrimaryFrameworkChange(e.target.value)}
                 className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               >
                 <option value="">Select Primary...</option>

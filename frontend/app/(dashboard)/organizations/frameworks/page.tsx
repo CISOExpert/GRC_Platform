@@ -1,17 +1,17 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useOrganization } from '@/lib/hooks/useOrganizations'
-import { 
-  useFrameworks, 
+import {
+  useFrameworks,
   useOrganizationFrameworks,
   useAddOrganizationFramework,
   useRemoveOrganizationFramework,
   useUpdateOrganizationFramework
 } from '@/lib/hooks/useFrameworks'
 
-export default function OrganizationFrameworksPage() {
+function OrganizationFrameworksContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const orgId = searchParams.get('orgId')
@@ -298,5 +298,21 @@ export default function OrganizationFrameworksPage() {
         </div>
       )}
     </div>
+  )
+}
+
+function LoadingFallback() {
+  return (
+    <div className="flex items-center justify-center min-h-screen">
+      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+    </div>
+  )
+}
+
+export default function OrganizationFrameworksPage() {
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <OrganizationFrameworksContent />
+    </Suspense>
   )
 }

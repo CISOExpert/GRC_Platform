@@ -9,11 +9,13 @@ import { createClient } from '@/lib/supabase/client'
 export type ExternalControl = {
   id: string
   ref_code: string
+  title?: string // Display name (e.g., "Identify" for ref_code "ID")
   description: string
   metadata: any
   framework_id?: string
   parent_id?: string
   hierarchy_level?: string
+  display_order?: number
 }
 
 export type Framework = {
@@ -119,8 +121,8 @@ export function useControlMappings(filters?: {
             *,
             source_framework:source_framework_id (id, code, name, version),
             target_framework:target_framework_id (id, code, name, version),
-            source_control:source_control_id (id, ref_code, description, metadata),
-            target_control:target_control_id (id, ref_code, description, metadata)
+            source_control:source_control_id (id, ref_code, title, description, metadata, display_order),
+            target_control:target_control_id (id, ref_code, title, description, metadata, display_order)
           `)
           .eq('source_framework_id', scfFrameworkId) // SCF as source
           .range(from, from + pageSize - 1)
@@ -210,7 +212,7 @@ export function useControlMappingsBySCF(filters?: {
 
       let query = supabase
         .from('external_controls')
-        .select('id, ref_code, description, metadata, parent_id')
+        .select('id, ref_code, title, description, metadata, parent_id, display_order')
         .eq('framework_id', scfFramework.id)
         .order('ref_code')
 
@@ -387,7 +389,7 @@ export function useControlMappingsByFramework(frameworkId: string, compareToFram
           *,
           source_framework:source_framework_id (id, code, name, version),
           target_framework:target_framework_id (id, code, name, version),
-          source_control:source_control_id (id, ref_code, description, metadata),
+          source_control:source_control_id (id, ref_code, title, description, metadata, display_order),
           target_control:target_control_id (id, ref_code, description, metadata)
         `)
         .eq('source_framework_id', scfFrameworkId)
@@ -423,8 +425,8 @@ export function useControlMappingsByFramework(frameworkId: string, compareToFram
             *,
             source_framework:source_framework_id (id, code, name, version),
             target_framework:target_framework_id (id, code, name, version),
-            source_control:source_control_id (id, ref_code, description, metadata),
-            target_control:target_control_id (id, ref_code, description, metadata)
+            source_control:source_control_id (id, ref_code, title, description, metadata, display_order),
+            target_control:target_control_id (id, ref_code, title, description, metadata, display_order)
           `)
           .eq('source_framework_id', scfFrameworkId)
           .eq('target_framework_id', compareToFramework)
@@ -510,7 +512,7 @@ export function useControlMappingsByFrameworkGrouped(
         // FOR SCF PRIMARY: Load all SCF controls from external_controls (unified)
         const scfQuery = supabase
           .from('external_controls')
-          .select('id, ref_code, description, metadata, parent_id')
+          .select('id, ref_code, title, description, metadata, parent_id, display_order')
           .eq('framework_id', frameworkId)
 
         const scfControls = await fetchAllData(scfQuery)
@@ -544,7 +546,7 @@ export function useControlMappingsByFrameworkGrouped(
         // EXTERNAL FRAMEWORK as primary: Load external_controls for this framework
         const externalControlsQuery = supabase
           .from('external_controls')
-          .select('id, ref_code, description, metadata, parent_id, hierarchy_level, display_order')
+          .select('id, ref_code, title, description, metadata, parent_id, hierarchy_level, display_order')
           .eq('framework_id', frameworkId)
           .order('display_order', { ascending: true })
 
@@ -567,7 +569,7 @@ export function useControlMappingsByFrameworkGrouped(
             .from('framework_crosswalks')
             .select(`
               *,
-              source_control:source_control_id (id, ref_code, description, metadata)
+              source_control:source_control_id (id, ref_code, title, description, metadata, display_order)
             `)
             .eq('source_framework_id', scfFrameworkId)
             .in('target_control_id', externalControlIds)
@@ -615,7 +617,7 @@ export function useControlMappingsByFrameworkGrouped(
           .from('framework_crosswalks')
           .select(`
             *,
-            source_control:source_control_id (id, ref_code, description, metadata),
+            source_control:source_control_id (id, ref_code, title, description, metadata, display_order),
             target_framework:target_framework_id (id, code, name, version),
             target_control:target_control_id (id, ref_code, description, metadata)
           `)
@@ -650,7 +652,7 @@ export function useControlMappingsByFrameworkGrouped(
           .from('framework_crosswalks')
           .select(`
             *,
-            source_control:source_control_id (id, ref_code, description, metadata),
+            source_control:source_control_id (id, ref_code, title, description, metadata, display_order),
             target_framework:target_framework_id (id, code, name, version),
             target_control:target_control_id (id, ref_code, description, metadata)
           `)
@@ -736,7 +738,9 @@ function filterOrganizationalParents(hierarchy: any): any {
 }
 
 /**
- * Filter hierarchy to only include nodes with mappings
+ * Filter hierarchy to only include nodes with mappings to ADDITIONAL frameworks
+ * Note: scfMappings are internal (primary -> SCF), so we only check comparison/related
+ * which represent mappings to the user-selected additional frameworks
  */
 function filterHierarchyByMappings(hierarchy: any): any {
   const filtered: any = {}
@@ -744,8 +748,9 @@ function filterHierarchyByMappings(hierarchy: any): any {
   for (const [key, node] of Object.entries(hierarchy)) {
     const nodeData = node as any
 
-    const hasMappings =
-      (nodeData.scfMappings?.length || 0) > 0 ||
+    // Only check comparisonMappings and relatedMappings (mappings to additional frameworks)
+    // scfMappings are always present for external controls - they just show the SCF mapping
+    const hasMappingsToAdditional =
       (nodeData.comparisonMappings?.length || 0) > 0 ||
       (nodeData.relatedMappings?.length || 0) > 0
 
@@ -756,7 +761,7 @@ function filterHierarchyByMappings(hierarchy: any): any {
 
     const hasChildren = Object.keys(filteredChildren).length > 0
 
-    if (hasMappings || hasChildren) {
+    if (hasMappingsToAdditional || hasChildren) {
       filtered[key] = {
         ...nodeData,
         children: filteredChildren
@@ -904,6 +909,58 @@ function buildFrameworkHierarchy(
   if (Object.keys(rootChildren).length === 0 && primaryMappings.length > 0) {
     return buildLegacyHierarchy(primaryMappings, comparisonMappings, additionalMappings)
   }
+
+  // Add comparison and related mappings to the hierarchy based on SCF control matching
+  // Group comparison and additional mappings by SCF control ID
+  const comparisonBySCF: Record<string, ControlMapping[]> = {}
+  comparisonMappings.forEach(mapping => {
+    if (mapping.scf_control) {
+      const scfId = mapping.scf_control.control_id
+      if (!comparisonBySCF[scfId]) comparisonBySCF[scfId] = []
+      comparisonBySCF[scfId].push(mapping)
+    }
+  })
+
+  const additionalBySCF: Record<string, ControlMapping[]> = {}
+  additionalMappings.forEach(mapping => {
+    if (mapping.scf_control) {
+      const scfId = mapping.scf_control.control_id
+      if (!additionalBySCF[scfId]) additionalBySCF[scfId] = []
+      additionalBySCF[scfId].push(mapping)
+    }
+  })
+
+  // Recursively add comparison and related mappings to nodes
+  function addMappingsToNodes(nodes: any) {
+    Object.values(nodes).forEach((node: any) => {
+      if (node.scfMappings && node.scfMappings.length > 0) {
+        node.scfMappings.forEach((scfMapping: any) => {
+          if (scfMapping.scf_control) {
+            const scfId = scfMapping.scf_control.control_id
+
+            // Add comparison mappings (framework selected for detailed comparison)
+            if (comparisonBySCF[scfId]) {
+              if (!node.comparisonMappings) node.comparisonMappings = []
+              node.comparisonMappings.push(...comparisonBySCF[scfId])
+            }
+
+            // Add related mappings (other additional frameworks)
+            if (additionalBySCF[scfId]) {
+              if (!node.relatedMappings) node.relatedMappings = []
+              node.relatedMappings.push(...additionalBySCF[scfId])
+            }
+          }
+        })
+      }
+
+      // Recurse into children
+      if (node.children && Object.keys(node.children).length > 0) {
+        addMappingsToNodes(node.children)
+      }
+    })
+  }
+
+  addMappingsToNodes(rootChildren)
 
   return rootChildren
 }

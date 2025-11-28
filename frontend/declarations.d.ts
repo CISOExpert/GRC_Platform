@@ -18,4 +18,6 @@ declare module 'lucide-react' {
   export const Database: LucideIcon
   export const Save: LucideIcon
   export const Bookmark: LucideIcon
+  export const TriangleAlert: LucideIcon
+  export const Network: LucideIcon
 }
