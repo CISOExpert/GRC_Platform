@@ -874,6 +874,7 @@ function buildFrameworkHierarchy(
 
     return {
       ref_code: control.ref_code,
+      title: control.title,
       description: control.description,
       scfMappings: primaryMapping?.scfMappings || [],
       comparisonMappings: [],
