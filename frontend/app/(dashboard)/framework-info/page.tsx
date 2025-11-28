@@ -28,10 +28,22 @@ export default function FrameworkInfoPage() {
     );
   }
 
+  // Get display name for a node - prefer title, clean up generic descriptions
+  function getDisplayName(node: any, refCode: string): string {
+    // If we have a proper title, use it
+    if (node.title) return node.title
+    // If description is just "External control X", don't show it (ref_code is already shown)
+    if (node.description?.startsWith('External control ')) return ''
+    // Otherwise use description
+    return node.description || ''
+  }
+
   // Recursive render function for hierarchy (no hooks inside)
   function renderNode(node: any, key: string, level: number = 0) {
     const isOpen = expanded[key];
     const hasChildren = node.children && Object.keys(node.children).length > 0;
+    const refCode = node.ref_code || key;
+    const displayName = getDisplayName(node, refCode);
     return (
       <div key={key} style={{ marginLeft: level * 24 }}>
         <button
@@ -41,7 +53,7 @@ export default function FrameworkInfoPage() {
           {hasChildren && (
             <span className={`mr-2 transition-transform ${isOpen ? 'rotate-90' : ''}`}>{'>'}</span>
           )}
-          {node.title || node.description} <span className="text-xs text-gray-500">({node.ref_code || key})</span>
+          {displayName ? `${displayName} (${refCode})` : refCode}
         </button>
         {isOpen && hasChildren && (
           <div className="mt-1">
