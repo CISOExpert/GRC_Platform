@@ -1,0 +1,41 @@
+# GRC Platform - Development Docker Compose
+# Uses Supabase local dev instance (supabase start)
+#
+# Usage:
+#   supabase start            # Start Supabase first
+#   docker compose up -d      # Start frontend
+#   docker compose logs -f    # View logs
+#   docker compose down       # Stop
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: dev
+    container_name: grc-frontend-dev
+    ports:
+      - "3002:3002"
+    environment:
+      - NODE_ENV=development
+      # Supabase local dev - use host IP for container access
+      - NEXT_PUBLIC_SUPABASE_URL=http://host.docker.internal:54321
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH
+      - SUPABASE_SERVICE_ROLE_KEY=sb_secret_N7UND0UgjKTVK-Uodkm0Hg_xSvEMPvz
+    volumes:
+      # Mount source for hot reload
+      - ./frontend:/app
+      # Preserve node_modules from container
+      - /app/node_modules
+      - /app/.next
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3002"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"
