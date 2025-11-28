@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useFrameworks, useFrameworkStats, useFrameworkDetails } from '@/lib/hooks/useFrameworks'
 import { useControlMappingsByFrameworkGrouped } from '@/lib/hooks/useControlMappings'
+import { createClient } from '@/lib/supabase/client'
 
 // Framework metadata lookup (can be moved to database later)
 const frameworkMetadata: Record<string, {
@@ -78,10 +79,36 @@ function getCategoryBadgeColor(category: string) {
   }
 }
 
+type SelectedControl = {
+  refCode: string
+  title: string
+  description: string
+  scfMappings: any[]
+}
+
+type Risk = {
+  id: string
+  risk_id: string
+  title: string
+  description: string
+  category: string
+}
+
+type RiskStats = {
+  totalRisks: number
+  byCategory: Record<string, number>
+  byStatus: Record<string, number>
+}
+
 export default function FrameworkInfoPage() {
   const { data: frameworks = [], isLoading, error } = useFrameworks()
   const [selectedFramework, setSelectedFramework] = useState<string>('')
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const [selectedControl, setSelectedControl] = useState<SelectedControl | null>(null)
+  const [relatedRisks, setRelatedRisks] = useState<Risk[]>([])
+  const [risksLoading, setRisksLoading] = useState(false)
+  const [riskStats, setRiskStats] = useState<RiskStats | null>(null)
+  const [riskStatsLoading, setRiskStatsLoading] = useState(false)
 
   const info = frameworks.find(fw => fw.id === selectedFramework) || null
   const { data: stats, isLoading: statsLoading } = useFrameworkStats(selectedFramework)
@@ -90,6 +117,164 @@ export default function FrameworkInfoPage() {
 
   // Get metadata for selected framework
   const metadata = info ? frameworkMetadata[info.code] || frameworkMetadata[info.code.split('-')[0]] : null
+
+  // Fetch risk statistics for the framework
+  useEffect(() => {
+    if (!selectedFramework) {
+      setRiskStats(null)
+      return
+    }
+
+    const fetchRiskStats = async () => {
+      setRiskStatsLoading(true)
+      const supabase = createClient()
+
+      console.log('[RiskStats] Fetching risk stats for framework:', selectedFramework)
+
+      // Get SCF framework ID
+      const { data: scfFramework, error: scfError } = await supabase
+        .from('frameworks')
+        .select('id')
+        .eq('code', 'SCF')
+        .single()
+
+      if (scfError) {
+        console.error('[RiskStats] Error getting SCF framework:', scfError)
+      }
+      if (!scfFramework) {
+        console.log('[RiskStats] No SCF framework found')
+        setRiskStats(null)
+        setRiskStatsLoading(false)
+        return
+      }
+      console.log('[RiskStats] SCF framework ID:', scfFramework.id)
+
+      // Get all SCF control IDs that map to this framework
+      const { data: crosswalks, error: crosswalkError } = await supabase
+        .from('framework_crosswalks')
+        .select('source_control_id')
+        .eq('source_framework_id', scfFramework.id)
+        .eq('target_framework_id', selectedFramework)
+
+      if (crosswalkError) {
+        console.error('[RiskStats] Error getting crosswalks:', crosswalkError)
+      }
+      if (!crosswalks || crosswalks.length === 0) {
+        console.log('[RiskStats] No crosswalks found for framework')
+        setRiskStats({ totalRisks: 0, byCategory: {}, byStatus: {} })
+        setRiskStatsLoading(false)
+        return
+      }
+
+      const scfControlIds = [...new Set(crosswalks.map(c => c.source_control_id))]
+      console.log('[RiskStats] Found', scfControlIds.length, 'unique SCF control IDs')
+
+      // Get all risk IDs linked to these SCF controls
+      const { data: riskControls, error: riskControlsError } = await supabase
+        .from('risk_controls')
+        .select('risk_id')
+        .in('control_id', scfControlIds)
+
+      if (riskControlsError) {
+        console.error('[RiskStats] Error getting risk_controls:', riskControlsError)
+      }
+      if (!riskControls || riskControls.length === 0) {
+        console.log('[RiskStats] No risk_controls found')
+        setRiskStats({ totalRisks: 0, byCategory: {}, byStatus: {} })
+        setRiskStatsLoading(false)
+        return
+      }
+
+      const riskIds = [...new Set(riskControls.map(rc => rc.risk_id))]
+      console.log('[RiskStats] Found', riskIds.length, 'unique risk IDs')
+
+      // Get the risks with their details
+      const { data: risks, error: risksError } = await supabase
+        .from('risks')
+        .select('id, category, status')
+        .in('id', riskIds)
+
+      if (risksError) {
+        console.error('[RiskStats] Error getting risks:', risksError)
+      }
+      if (!risks || risks.length === 0) {
+        console.log('[RiskStats] No risks found (RLS blocking?)')
+        setRiskStats({ totalRisks: 0, byCategory: {}, byStatus: {} })
+        setRiskStatsLoading(false)
+        return
+      }
+
+      console.log('[RiskStats] Found', risks.length, 'risks')
+
+      // Aggregate stats
+      const byCategory: Record<string, number> = {}
+      const byStatus: Record<string, number> = {}
+
+      risks.forEach(risk => {
+        const cat = risk.category || 'uncategorized'
+        const status = risk.status || 'unknown'
+        byCategory[cat] = (byCategory[cat] || 0) + 1
+        byStatus[status] = (byStatus[status] || 0) + 1
+      })
+
+      setRiskStats({
+        totalRisks: risks.length,
+        byCategory,
+        byStatus
+      })
+      setRiskStatsLoading(false)
+    }
+
+    fetchRiskStats()
+  }, [selectedFramework])
+
+  // Fetch related risks when control is selected
+  useEffect(() => {
+    if (!selectedControl || selectedControl.scfMappings.length === 0) {
+      setRelatedRisks([])
+      return
+    }
+
+    const fetchRisks = async () => {
+      setRisksLoading(true)
+      const supabase = createClient()
+
+      // Get SCF control IDs from mappings
+      const scfControlIds = selectedControl.scfMappings
+        .map(m => m.scf_control?.id)
+        .filter(Boolean)
+
+      if (scfControlIds.length === 0) {
+        setRelatedRisks([])
+        setRisksLoading(false)
+        return
+      }
+
+      // Get risks linked to these SCF controls
+      const { data: riskControls } = await supabase
+        .from('risk_controls')
+        .select('risk_id')
+        .in('control_id', scfControlIds)
+
+      if (!riskControls || riskControls.length === 0) {
+        setRelatedRisks([])
+        setRisksLoading(false)
+        return
+      }
+
+      const riskIds = [...new Set(riskControls.map(rc => rc.risk_id))]
+
+      const { data: risks } = await supabase
+        .from('risks')
+        .select('id, risk_id, title, description, category')
+        .in('id', riskIds)
+
+      setRelatedRisks(risks || [])
+      setRisksLoading(false)
+    }
+
+    fetchRisks()
+  }, [selectedControl])
 
   if (isLoading) {
     return (
@@ -114,6 +299,18 @@ export default function FrameworkInfoPage() {
     return node.description || ''
   }
 
+  // Handle control selection
+  function handleControlSelect(node: any, key: string) {
+    const refCode = node.ref_code || key
+    const displayName = getDisplayName(node, refCode)
+    setSelectedControl({
+      refCode,
+      title: displayName || refCode,
+      description: node.description || '',
+      scfMappings: node.scfMappings || []
+    })
+  }
+
   // Recursive render function for hierarchy
   function renderNode(node: any, key: string, level: number = 0) {
     const isOpen = expanded[key]
@@ -121,30 +318,38 @@ export default function FrameworkInfoPage() {
     const refCode = node.ref_code || key
     const displayName = getDisplayName(node, refCode)
     const childCount = hasChildren ? Object.keys(node.children).length : 0
+    const isSelected = selectedControl?.refCode === refCode
 
     return (
-      <div key={key} style={{ marginLeft: level * 20 }}>
+      <div key={key} style={{ marginLeft: level * 16 }}>
         <button
-          className={`w-full text-left py-2.5 px-4 rounded-lg font-medium transition-all ${
-            level === 0
+          className={`w-full text-left py-2 px-3 rounded-lg font-medium transition-all text-sm ${
+            isSelected
+              ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 ring-2 ring-indigo-500'
+              : level === 0
               ? 'text-indigo-700 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 hover:bg-indigo-100 dark:hover:bg-indigo-900/30'
               : 'text-gray-800 dark:text-gray-200 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700'
           } flex items-center justify-between group`}
-          onClick={() => hasChildren && setExpanded(exp => ({ ...exp, [key]: !isOpen }))}
+          onClick={() => {
+            handleControlSelect(node, key)
+            if (hasChildren) {
+              setExpanded(exp => ({ ...exp, [key]: !isOpen }))
+            }
+          }}
         >
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             {hasChildren && (
-              <span className={`transition-transform text-gray-400 ${isOpen ? 'rotate-90' : ''}`}>
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <span className={`transition-transform text-gray-400 flex-shrink-0 ${isOpen ? 'rotate-90' : ''}`}>
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
               </span>
             )}
-            <span>{displayName ? `${displayName} (${refCode})` : refCode}</span>
+            <span className="truncate">{displayName ? `${displayName} (${refCode})` : refCode}</span>
           </div>
           {hasChildren && (
-            <span className="text-xs text-gray-500 dark:text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">
-              {childCount} items
+            <span className="text-xs text-gray-500 dark:text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ml-2">
+              {childCount}
             </span>
           )}
         </button>
@@ -160,7 +365,7 @@ export default function FrameworkInfoPage() {
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-6 animate-fade-in">
       {/* Header */}
-      <div className="mb-8">
+      <div className="mb-6">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">
           Framework Information
         </h1>
@@ -170,7 +375,7 @@ export default function FrameworkInfoPage() {
       </div>
 
       {/* Framework Selector */}
-      <div className="mb-8">
+      <div className="mb-6">
         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
           Select Framework
         </label>
@@ -180,6 +385,7 @@ export default function FrameworkInfoPage() {
           onChange={e => {
             setSelectedFramework(e.target.value)
             setExpanded({})
+            setSelectedControl(null)
           }}
         >
           <option value="">-- Choose a framework --</option>
@@ -337,29 +543,272 @@ export default function FrameworkInfoPage() {
             </div>
           </div>
 
-          {/* Domains & Controls Hierarchy */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                Domains & Controls
-              </h3>
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                Hierarchical view of all controls in this framework
-              </p>
-            </div>
-            <div className="p-6">
-              {Object.keys(hierarchy).length === 0 ? (
-                <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                  <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          {/* Risk Statistics Dashboard */}
+          {riskStats && riskStats.totalRisks > 0 && (
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+                <div className="flex items-center gap-2">
+                  <svg className="w-5 h-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                   </svg>
-                  <p className="mt-2">No controls found for this framework.</p>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                    Risk Analysis
+                  </h3>
                 </div>
-              ) : (
-                <div className="space-y-2">
-                  {Object.entries(hierarchy).map(([key, node]) => renderNode(node, key, 0))}
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  Risks linked to this framework via SCF control mappings
+                </p>
+              </div>
+              <div className="p-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Total Risks */}
+                  <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-4 border border-red-100 dark:border-red-800">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium text-red-600 dark:text-red-400">Total Risks</p>
+                      <svg className="w-5 h-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                    </div>
+                    <p className="mt-2 text-3xl font-bold text-red-700 dark:text-red-300">
+                      {riskStats.totalRisks}
+                    </p>
+                    <p className="mt-1 text-xs text-red-500 dark:text-red-400">
+                      Linked via SCF controls
+                    </p>
+                  </div>
+
+                  {/* By Category */}
+                  <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4 border border-orange-100 dark:border-orange-800">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-medium text-orange-600 dark:text-orange-400">By Category</p>
+                      <svg className="w-5 h-5 text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                      </svg>
+                    </div>
+                    <div className="space-y-1">
+                      {Object.entries(riskStats.byCategory).map(([category, count]) => (
+                        <div key={category} className="flex items-center justify-between text-sm">
+                          <span className="text-gray-600 dark:text-gray-400 capitalize truncate mr-2">{category}</span>
+                          <span className="font-semibold text-orange-700 dark:text-orange-300 flex-shrink-0">{count}</span>
+                        </div>
+                      ))}
+                      {Object.keys(riskStats.byCategory).length === 0 && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400">No categories</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* By Status */}
+                  <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-4 border border-yellow-100 dark:border-yellow-800">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-medium text-yellow-600 dark:text-yellow-400">By Status</p>
+                      <svg className="w-5 h-5 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div className="space-y-1">
+                      {Object.entries(riskStats.byStatus).map(([status, count]) => (
+                        <div key={status} className="flex items-center justify-between text-sm">
+                          <span className="text-gray-600 dark:text-gray-400 capitalize truncate mr-2">{status}</span>
+                          <span className={`font-semibold flex-shrink-0 ${
+                            status === 'mitigated' || status === 'treated' ? 'text-green-600 dark:text-green-400' :
+                            status === 'identified' || status === 'open' ? 'text-red-600 dark:text-red-400' :
+                            'text-yellow-700 dark:text-yellow-300'
+                          }`}>{count}</span>
+                        </div>
+                      ))}
+                      {Object.keys(riskStats.byStatus).length === 0 && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400">No status data</p>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              )}
+              </div>
+            </div>
+          )}
+
+          {/* Risk Stats Loading State */}
+          {riskStatsLoading && (
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+              <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
+                <div className="animate-spin h-4 w-4 border-2 border-indigo-500 border-t-transparent rounded-full"></div>
+                Loading risk statistics...
+              </div>
+            </div>
+          )}
+
+          {/* Split View: Domains & Controls + Details Panel */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Left Panel: Domains & Controls Hierarchy */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                  Domains & Controls
+                </h3>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  Click to view details
+                </p>
+              </div>
+              <div className="p-4 max-h-[600px] overflow-y-auto">
+                {Object.keys(hierarchy).length === 0 ? (
+                  <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                    <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <p className="mt-2">No controls found for this framework.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {Object.entries(hierarchy).map(([key, node]) => renderNode(node, key, 0))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Right Panel: Control Details */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                  Control Details
+                </h3>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  {selectedControl ? selectedControl.refCode : 'Select a control to view details'}
+                </p>
+              </div>
+              <div className="p-4 max-h-[600px] overflow-y-auto">
+                {!selectedControl ? (
+                  <div className="text-center py-16 text-gray-500 dark:text-gray-400">
+                    <svg className="mx-auto h-16 w-16 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
+                    </svg>
+                    <p className="mt-4 text-lg font-medium">No Control Selected</p>
+                    <p className="mt-2 text-sm max-w-xs mx-auto">
+                      Click on a domain or control in the hierarchy to view its details, SCF mappings, and related risks.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    {/* Control Title */}
+                    <div>
+                      <h4 className="text-xl font-bold text-gray-900 dark:text-gray-100">
+                        {selectedControl.title}
+                      </h4>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        {selectedControl.refCode}
+                      </p>
+                    </div>
+
+                    {/* Description */}
+                    <div>
+                      <h5 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">
+                        Description
+                      </h5>
+                      <p className="text-gray-600 dark:text-gray-400 text-sm leading-relaxed">
+                        {selectedControl.description && !selectedControl.description.startsWith('External control ')
+                          ? selectedControl.description
+                          : 'No description available for this control.'}
+                      </p>
+                    </div>
+
+                    {/* Authoritative Source (SCF Mappings) */}
+                    <div>
+                      <h5 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">
+                        SCF Mappings ({selectedControl.scfMappings.length})
+                      </h5>
+                      {selectedControl.scfMappings.length === 0 ? (
+                        <p className="text-gray-500 dark:text-gray-400 text-sm">
+                          No SCF control mappings found for this control.
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {selectedControl.scfMappings.slice(0, 10).map((mapping, idx) => (
+                            <div
+                              key={idx}
+                              className="p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-100 dark:border-indigo-800"
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="text-indigo-700 dark:text-indigo-300 font-mono text-sm font-semibold">
+                                  {mapping.scf_control?.control_id || mapping.source_ref || 'Unknown'}
+                                </span>
+                                {mapping.mapping_strength && (
+                                  <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                    mapping.mapping_strength === 'full'
+                                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                                      : mapping.mapping_strength === 'partial'
+                                      ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300'
+                                      : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+                                  }`}>
+                                    {mapping.mapping_strength}
+                                  </span>
+                                )}
+                              </div>
+                              {mapping.scf_control?.title && (
+                                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                                  {mapping.scf_control.title}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                          {selectedControl.scfMappings.length > 10 && (
+                            <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-2">
+                              + {selectedControl.scfMappings.length - 10} more mappings
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Related Risks */}
+                    <div>
+                      <h5 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">
+                        Related Risks
+                      </h5>
+                      {risksLoading ? (
+                        <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 text-sm">
+                          <div className="animate-spin h-4 w-4 border-2 border-indigo-500 border-t-transparent rounded-full"></div>
+                          Loading risks...
+                        </div>
+                      ) : relatedRisks.length === 0 ? (
+                        <p className="text-gray-500 dark:text-gray-400 text-sm">
+                          {selectedControl.scfMappings.length === 0
+                            ? 'No SCF mappings, so no linked risks.'
+                            : 'No risks linked to the associated SCF controls.'}
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {relatedRisks.map((risk) => (
+                            <div
+                              key={risk.id}
+                              className="p-3 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-100 dark:border-red-800"
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-red-700 dark:text-red-300 font-semibold text-sm">
+                                  {risk.risk_id || risk.title}
+                                </span>
+                                {risk.category && (
+                                  <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
+                                    {risk.category}
+                                  </span>
+                                )}
+                              </div>
+                              {risk.title && risk.risk_id && (
+                                <p className="text-sm text-gray-700 dark:text-gray-300 mt-1 font-medium">
+                                  {risk.title}
+                                </p>
+                              )}
+                              {risk.description && (
+                                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
+                                  {risk.description}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
