@@ -41,7 +41,7 @@ export default function FrameworkInfoPage() {
           {hasChildren && (
             <span className={`mr-2 transition-transform ${isOpen ? 'rotate-90' : ''}`}>{'>'}</span>
           )}
-          {node.description} <span className="text-xs text-gray-500">({key})</span>
+          {node.title || node.description} <span className="text-xs text-gray-500">({node.ref_code || key})</span>
         </button>
         {isOpen && hasChildren && (
           <div className="mt-1">
