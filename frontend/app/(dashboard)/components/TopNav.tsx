@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
+import { useOrganizationContext } from '@/lib/contexts/OrganizationContext'
 
 interface Organization {
     id: string
@@ -14,8 +15,10 @@ const TopNav = () => {
     const supabase = createClient()
     const [userEmail, setUserEmail] = useState<string>('')
     const [organizations, setOrganizations] = useState<Organization[]>([])
-    const [selectedOrgId, setSelectedOrgId] = useState<string>('all')
     const [showOrgDropdown, setShowOrgDropdown] = useState(false)
+
+    // Use the shared organization context
+    const { currentOrgId, setCurrentOrgId } = useOrganizationContext()
 
     useEffect(() => {
         const getUser = async () => {
@@ -28,12 +31,12 @@ const TopNav = () => {
 
         const fetchOrganizations = async () => {
             console.log('[TopNav] Fetching organizations...')
-            
+
             const { data, error } = await supabase
                 .from('organizations')
                 .select('id, name')
                 .order('name')
-            
+
             if (error) {
                 console.error('[TopNav] Organizations Error:', {
                     message: error.message,
@@ -74,26 +77,26 @@ const TopNav = () => {
                             suppressHydrationWarning
                         >
                             <span>
-                                {selectedOrgId === 'all' 
-                                    ? 'All Organizations (Admin)' 
-                                    : organizations.find(o => o.id === selectedOrgId)?.name || 'Select Organization'
+                                {!currentOrgId
+                                    ? 'All Organizations (Admin)'
+                                    : organizations.find(o => o.id === currentOrgId)?.name || 'Select Organization'
                                 }
                             </span>
                             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                             </svg>
                         </button>
-                        
+
                         {showOrgDropdown && (
                             <div className="absolute right-0 mt-2 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
                                 <div className="py-1">
                                     <button
                                         onClick={() => {
-                                            setSelectedOrgId('all')
+                                            setCurrentOrgId(null)
                                             setShowOrgDropdown(false)
                                         }}
                                         className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 ${
-                                            selectedOrgId === 'all' ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-700'
+                                            !currentOrgId ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-700'
                                         }`}
                                         suppressHydrationWarning
                                     >
@@ -105,11 +108,11 @@ const TopNav = () => {
                                                 <button
                                                     key={org.id}
                                                     onClick={() => {
-                                                        setSelectedOrgId(org.id)
+                                                        setCurrentOrgId(org.id)
                                                         setShowOrgDropdown(false)
                                                     }}
                                                     className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 ${
-                                                        selectedOrgId === org.id ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-700'
+                                                        currentOrgId === org.id ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-700'
                                                     }`}
                                                     suppressHydrationWarning
                                                 >

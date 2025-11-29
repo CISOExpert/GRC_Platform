@@ -3,6 +3,7 @@
 import { useDashboardStats } from '@/lib/hooks/useDashboard'
 import Link from 'next/link'
 import { AlertTriangle, Shield, Zap, Cloud, Skull } from 'lucide-react'
+import FrameworkCoverageCards from './components/FrameworkCoverageCards'
 
 // NIST CSF Function colors
 const nistFunctionColors: Record<string, { bg: string; text: string; bar: string }> = {
@@ -71,6 +72,9 @@ export default function DashboardPage() {
           Secure Controls Framework 2025.3.1 - Comprehensive View
         </p>
       </div>
+
+      {/* Organization's Selected Frameworks */}
+      <FrameworkCoverageCards />
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 mb-8">

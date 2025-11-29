@@ -11,7 +11,7 @@ import sys
 import re
 
 DB_URL = "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
-EXCEL_PATH = "/Users/doneil/SynologyDrive/GRC_Unified_Platform/reference_material/secure-controls-framework-scf-2025-3-1 (1).xlsx"
+EXCEL_PATH = "/reference_material/secure-controls-framework-scf-2025-3-1 (1).xlsx"
 
 def clean_text(text):
     """Clean and normalize text"""

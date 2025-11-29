@@ -9,11 +9,13 @@ export const queryKeys = {
   // Organizations
   organizations: ['organizations'] as const,
   organization: (id: string) => ['organizations', id] as const,
-  
+
   // Frameworks
   frameworks: ['frameworks'] as const,
   framework: (id: string) => ['frameworks', id] as const,
   organizationFrameworks: (orgId: string) => ['organization-frameworks', orgId] as const,
+  organizationFrameworksPrioritized: (orgId: string) => ['organization-frameworks-prioritized', orgId] as const,
+  availableFrameworksForOrg: (orgId: string) => ['available-frameworks', orgId] as const,
   
   // SCF Controls
   scfControls: ['scf-controls'] as const,

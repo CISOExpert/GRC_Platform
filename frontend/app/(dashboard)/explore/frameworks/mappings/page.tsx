@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useMemo, useEffect } from 'react'
-import { useFrameworks } from '@/lib/hooks/useFrameworks'
+import { useFrameworks, usePrioritizedFrameworks } from '@/lib/hooks/useFrameworks'
 import { useControlMappingsBySCF, useControlMappingsByFrameworkGrouped } from '@/lib/hooks/useControlMappings'
+import { useOrganizationContext } from '@/lib/contexts/OrganizationContext'
 import { SaveViewModal } from './components/SaveViewModal'
 import { LoadViewModal } from './components/LoadViewModal'
 import { MappingOverview } from './MappingOverview'
@@ -30,8 +31,18 @@ export default function FrameworkMappingsPage() {
   const [showSaveModal, setShowSaveModal] = useState(false)
   const [showLoadModal, setShowLoadModal] = useState(false)
 
-  // Fetch data with React Query
+  // Get current organization for framework prioritization
+  const { currentOrgId } = useOrganizationContext()
+
+  // Fetch data with React Query - use prioritized frameworks when org is selected
   const { data: frameworks = [], isLoading: frameworksLoading } = useFrameworks()
+  const {
+    frameworks: prioritizedFrameworks,
+    selectedFrameworks: orgSelectedFrameworks,
+    isFrameworkSelected,
+    getSelectionStatus,
+    isLoading: prioritizedLoading
+  } = usePrioritizedFrameworks(currentOrgId)
   
   // Determine if primary is SCF (special handling for SCF's domain-based structure)
   const scfFramework = frameworks.find(f => f.code === 'SCF')
@@ -58,30 +69,41 @@ export default function FrameworkMappingsPage() {
     includeOrganizationalControls
   )
 
-  const loading = frameworksLoading || mappingsLoading
+  const loading = frameworksLoading || mappingsLoading || prioritizedLoading
 
   // Filter and sort frameworks for the filter panel
+  // When org is selected: show org frameworks first (selected > unselected), then others
+  // When no org: use prioritized frameworks (which falls back to alphabetical)
   const filteredAndSortedFrameworks = useMemo(() => {
-    if (!frameworks) return []
-    
+    const sourceFrameworks = currentOrgId ? prioritizedFrameworks : frameworks
+    if (!sourceFrameworks?.length) return []
+
     // Exclude primary framework from additional frameworks list
-    const availableForAdditional = frameworks.filter(f => f.id !== primaryFramework)
-    
+    const availableForAdditional = sourceFrameworks.filter(f => f.id !== primaryFramework)
+
     // Filter by search query
     const filtered = frameworkSearchQuery.trim() === ''
       ? availableForAdditional
-      : availableForAdditional.filter(f => 
+      : availableForAdditional.filter(f =>
           f.name.toLowerCase().includes(frameworkSearchQuery.toLowerCase()) ||
           f.code.toLowerCase().includes(frameworkSearchQuery.toLowerCase()) ||
           f.version?.toLowerCase().includes(frameworkSearchQuery.toLowerCase())
         )
-    
-    // Sort: selected frameworks first, then unselected, both alphabetically
-    const selected = filtered.filter(f => additionalFrameworks.has(f.id)).sort((a, b) => a.name.localeCompare(b.name))
-    const unselected = filtered.filter(f => !additionalFrameworks.has(f.id)).sort((a, b) => a.name.localeCompare(b.name))
-    
-    return [...selected, ...unselected]
-  }, [frameworks, frameworkSearchQuery, additionalFrameworks, primaryFramework])
+
+    // Sort: currently checked first, then by org priority (active > evaluating > other), then alphabetically
+    const checkedSelected = filtered.filter(f => additionalFrameworks.has(f.id))
+    const uncheckedSelected = filtered.filter(f => !additionalFrameworks.has(f.id))
+
+    // Within unchecked, prioritize org-selected frameworks
+    if (currentOrgId) {
+      const uncheckedOrgActive = uncheckedSelected.filter(f => getSelectionStatus(f.id) === 'active')
+      const uncheckedOrgEval = uncheckedSelected.filter(f => getSelectionStatus(f.id) === 'evaluating')
+      const uncheckedOther = uncheckedSelected.filter(f => !isFrameworkSelected(f.id))
+      return [...checkedSelected, ...uncheckedOrgActive, ...uncheckedOrgEval, ...uncheckedOther]
+    }
+
+    return [...checkedSelected, ...uncheckedSelected]
+  }, [frameworks, prioritizedFrameworks, currentOrgId, frameworkSearchQuery, additionalFrameworks, primaryFramework, isFrameworkSelected, getSelectionStatus])
 
   // Debug logging
   console.log('=== Framework Mappings Debug ===')
@@ -882,13 +904,18 @@ export default function FrameworkMappingsPage() {
             ) : (
               filteredAndSortedFrameworks.map(fw => {
                 const isSelected = additionalFrameworks.has(fw.id)
+                const orgStatus = currentOrgId ? getSelectionStatus(fw.id) : null
+                const isOrgFramework = orgStatus !== null
+
                 return (
                   <label
                     key={fw.id}
                     className={`flex items-center gap-3 p-2 rounded cursor-pointer transition-all duration-150 ${
-                      isSelected 
-                        ? 'bg-indigo-50 dark:bg-indigo-900/20 border-l-4 border-indigo-600' 
-                        : 'hover:bg-gray-50 dark:hover:bg-gray-700 border-l-4 border-transparent'
+                      isSelected
+                        ? 'bg-indigo-50 dark:bg-indigo-900/20 border-l-4 border-indigo-600'
+                        : isOrgFramework
+                          ? `hover:bg-gray-50 dark:hover:bg-gray-700 border-l-4 ${orgStatus === 'active' ? 'border-green-500' : 'border-amber-400'}`
+                          : 'hover:bg-gray-50 dark:hover:bg-gray-700 border-l-4 border-transparent'
                     }`}
                   >
                     <input
@@ -898,16 +925,25 @@ export default function FrameworkMappingsPage() {
                       className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded ml-1"
                     />
                     <div className="flex-1">
-                      <div className={`text-sm font-medium ${
-                        isSelected 
-                          ? 'text-indigo-700 dark:text-indigo-300' 
+                      <div className={`text-sm font-medium flex items-center gap-2 ${
+                        isSelected
+                          ? 'text-indigo-700 dark:text-indigo-300'
                           : 'text-gray-900 dark:text-gray-100'
                       }`}>
-                        {fw.name}
+                        <span>{fw.name}</span>
+                        {isOrgFramework && (
+                          <span className={`inline-flex items-center px-1.5 py-0.5 text-xs font-medium rounded ${
+                            orgStatus === 'active'
+                              ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                              : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
+                          }`}>
+                            {orgStatus === 'active' ? 'My' : 'Eval'}
+                          </span>
+                        )}
                         {fw.mapping_count !== undefined && (
-                          <span className={`ml-2 font-normal ${
-                            isSelected 
-                              ? 'text-indigo-600 dark:text-indigo-400' 
+                          <span className={`font-normal ${
+                            isSelected
+                              ? 'text-indigo-600 dark:text-indigo-400'
                               : 'text-gray-500 dark:text-gray-400'
                           }`}>
                             ({fw.mapping_count})
@@ -916,8 +952,8 @@ export default function FrameworkMappingsPage() {
                       </div>
                       {fw.version && (
                         <div className={`text-xs ${
-                          isSelected 
-                            ? 'text-indigo-600 dark:text-indigo-400' 
+                          isSelected
+                            ? 'text-indigo-600 dark:text-indigo-400'
                             : 'text-gray-500 dark:text-gray-400'
                         }`}>
                           {fw.version}
@@ -991,11 +1027,37 @@ export default function FrameworkMappingsPage() {
                 className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               >
                 <option value="">Select Primary...</option>
-                {frameworks.map(fw => (
-                  <option key={fw.id} value={fw.id}>
-                    {fw.name} {fw.version}
-                  </option>
-                ))}
+                {/* Show org-selected frameworks first with indicators when org is selected */}
+                {currentOrgId && orgSelectedFrameworks.length > 0 && (
+                  <optgroup label="My Frameworks">
+                    {orgSelectedFrameworks.map(fw => {
+                      const status = getSelectionStatus(fw.id)
+                      return (
+                        <option key={fw.id} value={fw.id}>
+                          {status === 'evaluating' ? '(Eval) ' : ''}{fw.name} {fw.version}
+                        </option>
+                      )
+                    })}
+                  </optgroup>
+                )}
+                {/* Show all other frameworks */}
+                {currentOrgId && orgSelectedFrameworks.length > 0 ? (
+                  <optgroup label="Other Frameworks">
+                    {frameworks
+                      .filter(fw => !isFrameworkSelected(fw.id))
+                      .map(fw => (
+                        <option key={fw.id} value={fw.id}>
+                          {fw.name} {fw.version}
+                        </option>
+                      ))}
+                  </optgroup>
+                ) : (
+                  frameworks.map(fw => (
+                    <option key={fw.id} value={fw.id}>
+                      {fw.name} {fw.version}
+                    </option>
+                  ))
+                )}
               </select>
             </div>
 

@@ -159,4 +159,4 @@ SET description = title
 WHERE title IS NOT NULL
   AND description LIKE 'External control%';
 
-RAISE NOTICE 'Migration complete: external_controls now has title column and proper display_order';
+-- Migration complete: external_controls now has title column and proper display_order

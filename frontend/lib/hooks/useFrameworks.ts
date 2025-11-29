@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMemo, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { queryKeys } from '@/lib/react-query/hooks'
 
@@ -106,8 +107,10 @@ export function useOrganizationFrameworks(orgId: string) {
   })
 }
 
+export type SelectionStatus = 'active' | 'evaluating'
+
 /**
- * Hook to add framework to organization
+ * Hook to add framework to organization (enhanced with selection_status)
  */
 export function useAddOrganizationFramework() {
   const queryClient = useQueryClient()
@@ -118,12 +121,19 @@ export function useAddOrganizationFramework() {
       organization_id: string
       framework_id: string
       is_primary?: boolean
+      selection_status?: SelectionStatus
       compliance_status?: string
       notes?: string
     }) => {
+      // Set default selection_status
+      const insertData = {
+        ...input,
+        selection_status: input.selection_status || 'active'
+      }
+
       const { data, error } = await supabase
         .from('organization_frameworks')
-        .insert([input])
+        .insert([insertData])
         .select()
         .single()
 
@@ -133,6 +143,12 @@ export function useAddOrganizationFramework() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.organizationFrameworks(variables.organization_id)
+      })
+      queryClient.invalidateQueries({
+        queryKey: ['organization-frameworks-prioritized', variables.organization_id]
+      })
+      queryClient.invalidateQueries({
+        queryKey: ['available-frameworks', variables.organization_id]
       })
     },
   })
@@ -159,12 +175,18 @@ export function useRemoveOrganizationFramework() {
       queryClient.invalidateQueries({
         queryKey: queryKeys.organizationFrameworks(variables.orgId)
       })
+      queryClient.invalidateQueries({
+        queryKey: ['organization-frameworks-prioritized', variables.orgId]
+      })
+      queryClient.invalidateQueries({
+        queryKey: ['available-frameworks', variables.orgId]
+      })
     },
   })
 }
 
 /**
- * Hook to update organization framework
+ * Hook to update organization framework (enhanced with selection_status and display_order)
  */
 export function useUpdateOrganizationFramework() {
   const queryClient = useQueryClient()
@@ -176,7 +198,9 @@ export function useUpdateOrganizationFramework() {
       orgId: string
       updates: {
         is_primary?: boolean
+        selection_status?: SelectionStatus
         compliance_status?: string
+        display_order?: number
         target_completion_date?: string | null
         notes?: string | null
       }
@@ -194,6 +218,69 @@ export function useUpdateOrganizationFramework() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.organizationFrameworks(variables.orgId)
+      })
+      queryClient.invalidateQueries({
+        queryKey: ['organization-frameworks-prioritized', variables.orgId]
+      })
+    },
+  })
+}
+
+/**
+ * Hook to get available frameworks for an organization (not yet selected)
+ */
+export function useAvailableFrameworksForOrg(orgId: string) {
+  const supabase = createClient()
+
+  return useQuery({
+    queryKey: ['available-frameworks', orgId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .rpc('get_available_frameworks_for_org', { org_uuid: orgId })
+
+      if (error) throw error
+      return data as Array<{
+        id: string
+        code: string
+        name: string
+        version: string | null
+        description: string | null
+        external_control_count: number
+        mapping_count: number
+        is_selected: boolean
+      }>
+    },
+    enabled: !!orgId,
+    staleTime: 2 * 60 * 1000,
+  })
+}
+
+/**
+ * Hook to reorder frameworks (batch update display_order)
+ */
+export function useReorderOrganizationFrameworks() {
+  const queryClient = useQueryClient()
+  const supabase = createClient()
+
+  return useMutation({
+    mutationFn: async ({ orgId, orderedIds }: { orgId: string; orderedIds: string[] }) => {
+      // Update display_order for each framework in order
+      const updates = orderedIds.map((id, index) =>
+        supabase
+          .from('organization_frameworks')
+          .update({ display_order: index })
+          .eq('id', id)
+      )
+
+      await Promise.all(updates)
+      return orderedIds
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.organizationFrameworks(variables.orgId)
+      })
+      queryClient.invalidateQueries({
+        queryKey: ['organization-frameworks-prioritized', variables.orgId]
       })
     },
   })
@@ -305,4 +392,103 @@ export function useFrameworkDetails(frameworkId: string) {
     enabled: !!frameworkId,
     staleTime: 5 * 60 * 1000,
   })
+}
+
+/**
+ * Hook to get frameworks prioritized by organization selection
+ * Returns frameworks in order: Active org frameworks > Evaluating org frameworks > Other frameworks
+ * Also provides helper methods for filtering
+ */
+export function usePrioritizedFrameworks(orgId: string | null) {
+  const { data: allFrameworks = [], isLoading: frameworksLoading } = useFrameworks()
+  const supabase = createClient()
+
+  // Fetch organization's selected frameworks if org is selected
+  const { data: orgFrameworks = [], isLoading: orgFrameworksLoading } = useQuery({
+    queryKey: ['organization-frameworks-prioritized', orgId],
+    queryFn: async () => {
+      if (!orgId) return []
+
+      const { data, error } = await supabase
+        .rpc('get_organization_frameworks_prioritized', { org_uuid: orgId })
+
+      if (error) throw error
+      return data || []
+    },
+    enabled: !!orgId,
+    staleTime: 2 * 60 * 1000,
+  })
+
+  // Build prioritized list
+  const prioritizedFrameworks = useMemo(() => {
+    if (!allFrameworks.length) return []
+    if (!orgId || !orgFrameworks.length) {
+      // No org selected - just return all frameworks sorted by name
+      return allFrameworks.slice().sort((a, b) => a.name.localeCompare(b.name))
+    }
+
+    // Build sets for quick lookup
+    const activeIds = new Set(
+      orgFrameworks
+        .filter((of: any) => of.selection_status === 'active')
+        .map((of: any) => of.framework_id)
+    )
+    const evaluatingIds = new Set(
+      orgFrameworks
+        .filter((of: any) => of.selection_status === 'evaluating')
+        .map((of: any) => of.framework_id)
+    )
+
+    // Split frameworks into categories
+    const activeFrameworks = allFrameworks.filter(f => activeIds.has(f.id))
+    const evaluatingFrameworks = allFrameworks.filter(f => evaluatingIds.has(f.id))
+    const otherFrameworks = allFrameworks.filter(f => !activeIds.has(f.id) && !evaluatingIds.has(f.id))
+
+    // Sort each category by display_order (for org frameworks) or name
+    const sortByDisplayOrder = (a: Framework, b: Framework) => {
+      const aOrder = orgFrameworks.find((of: any) => of.framework_id === a.id)?.display_order ?? 999
+      const bOrder = orgFrameworks.find((of: any) => of.framework_id === b.id)?.display_order ?? 999
+      return aOrder - bOrder || a.name.localeCompare(b.name)
+    }
+
+    activeFrameworks.sort(sortByDisplayOrder)
+    evaluatingFrameworks.sort(sortByDisplayOrder)
+    otherFrameworks.sort((a, b) => a.name.localeCompare(b.name))
+
+    return [...activeFrameworks, ...evaluatingFrameworks, ...otherFrameworks]
+  }, [allFrameworks, orgFrameworks, orgId])
+
+  // Helper: get only org-selected frameworks (active + evaluating)
+  const selectedFrameworksOnly = useMemo(() => {
+    if (!orgId || !orgFrameworks.length) return []
+
+    const selectedIds = new Set(orgFrameworks.map((of: any) => of.framework_id))
+    return prioritizedFrameworks.filter(f => selectedIds.has(f.id))
+  }, [prioritizedFrameworks, orgFrameworks, orgId])
+
+  // Helper: check if a framework is selected by the org
+  const isFrameworkSelected = useCallback((frameworkId: string) => {
+    if (!orgFrameworks.length) return false
+    return orgFrameworks.some((of: any) => of.framework_id === frameworkId)
+  }, [orgFrameworks])
+
+  // Helper: get selection status for a framework
+  const getSelectionStatus = useCallback((frameworkId: string): 'active' | 'evaluating' | null => {
+    const of = orgFrameworks.find((of: any) => of.framework_id === frameworkId)
+    return of?.selection_status || null
+  }, [orgFrameworks])
+
+  return {
+    // All frameworks, prioritized by org selection
+    frameworks: prioritizedFrameworks,
+    // Only frameworks selected by the org
+    selectedFrameworks: selectedFrameworksOnly,
+    // Raw org framework data
+    orgFrameworks,
+    // Loading states
+    isLoading: frameworksLoading || orgFrameworksLoading,
+    // Helper methods
+    isFrameworkSelected,
+    getSelectionStatus,
+  }
 }

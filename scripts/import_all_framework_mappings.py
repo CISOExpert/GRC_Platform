@@ -379,7 +379,7 @@ def import_framework(ws, framework_display_name: str, column_index: int,
 
 def main():
     """Import all frameworks."""
-    excel_path = '/Users/doneil/SynologyDrive/GRC_Unified_Platform/reference_material/secure-controls-framework-scf-2025-3-1 (1).xlsx'
+    excel_path = '/reference_material/secure-controls-framework-scf-2025-3-1 (1).xlsx'
     
     print("="*70)
     print("IMPORTING ALL FRAMEWORK MAPPINGS")

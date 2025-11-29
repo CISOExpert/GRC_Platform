@@ -3,11 +3,19 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState, useEffect } from 'react'
+import { useOrganizationContext } from '@/lib/contexts/OrganizationContext'
 
 const Sidebar = () => {
     const pathname = usePathname()
     const [isCollapsed, setIsCollapsed] = useState(false)
     const [isHydrated, setIsHydrated] = useState(false)
+    const {
+        currentOrgId,
+        activeFrameworks,
+        evaluatingFrameworks,
+        isAdmin,
+        isLoadingFrameworks
+    } = useOrganizationContext()
 
     // Load collapsed state from localStorage on mount
     useEffect(() => {
@@ -129,7 +137,7 @@ const Sidebar = () => {
             </div>
 
             {/* Navigation Links */}
-            <ul className={`flex-1 py-4 space-y-1 ${isCollapsed ? 'px-2' : 'px-3'}`}>
+            <ul className={`py-4 space-y-1 ${isCollapsed ? 'px-2' : 'px-3'}`}>
                 {navItems.map((item) => {
                     const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
                     return (
@@ -154,6 +162,102 @@ const Sidebar = () => {
                     )
                 })}
             </ul>
+
+            {/* My Frameworks Section - Only show when org is selected */}
+            {currentOrgId && (activeFrameworks.length > 0 || evaluatingFrameworks.length > 0) && (
+                <div className={`border-t border-gray-200 dark:border-gray-800 ${isCollapsed ? 'px-2 py-3' : 'px-3 py-4'}`}>
+                    {/* Section Header */}
+                    {!isCollapsed && (
+                        <div className="flex items-center justify-between mb-2 px-1">
+                            <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                My Frameworks
+                            </span>
+                            {isAdmin && (
+                                <Link
+                                    href={`/organizations/${currentOrgId}/frameworks`}
+                                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                                    title="Manage Frameworks"
+                                >
+                                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    </svg>
+                                </Link>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Loading state */}
+                    {isLoadingFrameworks && (
+                        <div className={`${isCollapsed ? 'flex justify-center' : 'px-1'}`}>
+                            <div className="animate-spin h-4 w-4 border-2 border-indigo-500 border-t-transparent rounded-full" />
+                        </div>
+                    )}
+
+                    {/* Active Frameworks */}
+                    {!isLoadingFrameworks && activeFrameworks.length > 0 && (
+                        <ul className="space-y-1">
+                            {activeFrameworks.map((fw) => (
+                                <li key={fw.id}>
+                                    <Link
+                                        href={`/explore/frameworks/mappings?primary=${fw.framework_id}`}
+                                        className={`flex items-center rounded-lg transition-all ${
+                                            isCollapsed
+                                                ? 'justify-center p-2'
+                                                : 'gap-2 px-2 py-1.5'
+                                        } text-gray-700 dark:text-gray-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:text-indigo-600 dark:hover:text-indigo-400`}
+                                        title={isCollapsed ? `${fw.framework_name} (${fw.external_control_count} controls)` : undefined}
+                                    >
+                                        <svg className="h-4 w-4 flex-shrink-0 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                                        </svg>
+                                        {!isCollapsed && (
+                                            <div className="flex-1 min-w-0 flex items-center justify-between">
+                                                <span className="text-sm truncate">{fw.framework_code}</span>
+                                                <span className="text-xs text-gray-400 ml-1">{fw.external_control_count}</span>
+                                            </div>
+                                        )}
+                                    </Link>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+
+                    {/* Evaluating Frameworks - dimmed */}
+                    {!isLoadingFrameworks && evaluatingFrameworks.length > 0 && (
+                        <ul className={`space-y-1 ${activeFrameworks.length > 0 ? 'mt-2 pt-2 border-t border-gray-100 dark:border-gray-800' : ''}`}>
+                            {evaluatingFrameworks.map((fw) => (
+                                <li key={fw.id}>
+                                    <Link
+                                        href={`/explore/frameworks/mappings?primary=${fw.framework_id}`}
+                                        className={`flex items-center rounded-lg transition-all opacity-60 ${
+                                            isCollapsed
+                                                ? 'justify-center p-2'
+                                                : 'gap-2 px-2 py-1.5'
+                                        } text-gray-500 dark:text-gray-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 hover:text-amber-600 dark:hover:text-amber-400 hover:opacity-100`}
+                                        title={isCollapsed ? `${fw.framework_name} (Evaluating)` : undefined}
+                                    >
+                                        <svg className="h-4 w-4 flex-shrink-0 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        {!isCollapsed && (
+                                            <div className="flex-1 min-w-0 flex items-center justify-between">
+                                                <span className="text-sm truncate">{fw.framework_code}</span>
+                                                <span className="text-xs px-1 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">
+                                                    eval
+                                                </span>
+                                            </div>
+                                        )}
+                                    </Link>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </div>
+            )}
+
+            {/* Spacer to push content above footer */}
+            <div className="flex-1" />
 
             {/* Quick Stats - Only show when expanded */}
             {!isCollapsed && (
