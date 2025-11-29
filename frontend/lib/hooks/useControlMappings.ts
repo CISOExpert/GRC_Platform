@@ -967,6 +967,162 @@ function buildFrameworkHierarchy(
 /**
  * Legacy hierarchy builder using ref_code pattern parsing
  */
+/**
+ * Hook to fetch controls from secondary frameworks that have NO mappings to the primary framework
+ * Returns controls grouped by: Framework → Domain → Subdomain → Control
+ */
+export function useUnmappedSecondaryControls(
+  primaryFrameworkId: string,
+  secondaryFrameworkIds: string[],
+  enabled: boolean = true
+) {
+  const supabase = createClient()
+
+  return useQuery({
+    queryKey: ['unmapped-secondary-controls', primaryFrameworkId, secondaryFrameworkIds, enabled],
+    queryFn: async () => {
+      if (!primaryFrameworkId || secondaryFrameworkIds.length === 0) return null
+
+      // Get SCF framework ID (mappings go through SCF)
+      const { data: scfFramework } = await supabase
+        .from('frameworks')
+        .select('id')
+        .eq('code', 'SCF')
+        .single()
+
+      const scfFrameworkId = scfFramework?.id
+      if (!scfFrameworkId) return null
+
+      // Check if primary is SCF
+      const { data: primaryFw } = await supabase
+        .from('frameworks')
+        .select('id, code, name, version')
+        .eq('id', primaryFrameworkId)
+        .single()
+
+      const isPrimarySCF = primaryFw?.code === 'SCF'
+
+      const result: Record<string, {
+        framework: Framework
+        totalControls: number
+        unmappedCount: number
+        hierarchy: any
+      }> = {}
+
+      // Process each secondary framework
+      for (const secondaryFwId of secondaryFrameworkIds) {
+        // Get framework info
+        const { data: secondaryFw } = await supabase
+          .from('frameworks')
+          .select('id, code, name, version')
+          .eq('id', secondaryFwId)
+          .single()
+
+        if (!secondaryFw) continue
+
+        // Get all controls from this secondary framework
+        const { data: allControls } = await supabase
+          .from('external_controls')
+          .select('id, ref_code, title, description, metadata, parent_id, hierarchy_level, display_order')
+          .eq('framework_id', secondaryFwId)
+          .order('display_order', { ascending: true })
+
+        if (!allControls || allControls.length === 0) continue
+
+        // Get all control IDs that have mappings to SCF (which means they map to primary if primary is SCF)
+        // For SCF primary: secondary controls WITH mappings to SCF are "mapped"
+        // So we need to find secondary controls WITHOUT any crosswalk entry
+        const { data: mappedControlIds } = await supabase
+          .from('framework_crosswalks')
+          .select('target_control_id')
+          .eq('source_framework_id', scfFrameworkId)
+          .eq('target_framework_id', secondaryFwId)
+
+        const mappedIdSet = new Set(mappedControlIds?.map(m => m.target_control_id) || [])
+
+        // Filter to only unmapped controls (leaf nodes without mappings)
+        const unmappedControls = allControls.filter(c => !mappedIdSet.has(c.id))
+
+        if (unmappedControls.length === 0) continue
+
+        // Build hierarchy for unmapped controls
+        const hierarchy = buildUnmappedHierarchy(unmappedControls, allControls)
+
+        result[secondaryFwId] = {
+          framework: secondaryFw as Framework,
+          totalControls: allControls.length,
+          unmappedCount: unmappedControls.length,
+          hierarchy
+        }
+      }
+
+      return result
+    },
+    enabled: enabled && !!primaryFrameworkId && secondaryFrameworkIds.length > 0,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+/**
+ * Build hierarchy structure for unmapped controls
+ * Uses parent_id relationships to build: Domain → Subdomain → Control
+ */
+function buildUnmappedHierarchy(unmappedControls: any[], allControls: any[]) {
+  const hierarchy: any = {}
+
+  // Create a map of all controls by ID for quick lookup
+  const controlById = new Map(allControls.map(c => [c.id, c]))
+
+  // Create a map of control IDs that are unmapped
+  const unmappedIds = new Set(unmappedControls.map(c => c.id))
+
+  // Build parent chain for each unmapped control
+  const getAncestorChain = (control: any): any[] => {
+    const chain = [control]
+    let current = control
+    while (current.parent_id) {
+      const parent = controlById.get(current.parent_id)
+      if (parent) {
+        chain.unshift(parent)
+        current = parent
+      } else {
+        break
+      }
+    }
+    return chain
+  }
+
+  // Process each unmapped control
+  unmappedControls.forEach(control => {
+    const chain = getAncestorChain(control)
+
+    let currentLevel = hierarchy
+    chain.forEach((item, index) => {
+      const key = item.ref_code
+
+      if (!currentLevel[key]) {
+        currentLevel[key] = {
+          ref_code: item.ref_code,
+          title: item.title || item.ref_code,
+          description: item.description,
+          isUnmapped: unmappedIds.has(item.id),
+          isLeaf: index === chain.length - 1,
+          children: {}
+        }
+      }
+
+      // Mark as unmapped if this is the actual unmapped control
+      if (unmappedIds.has(item.id)) {
+        currentLevel[key].isUnmapped = true
+      }
+
+      currentLevel = currentLevel[key].children
+    })
+  })
+
+  return hierarchy
+}
+
 function buildLegacyHierarchy(
   primaryMappings: ControlMapping[],
   comparisonMappings: ControlMapping[],

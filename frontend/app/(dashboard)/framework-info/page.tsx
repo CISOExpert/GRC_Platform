@@ -5,6 +5,7 @@ import { useFrameworks, useFrameworkStats, useFrameworkDetails } from '@/lib/hoo
 import { useControlMappingsByFrameworkGrouped } from '@/lib/hooks/useControlMappings'
 import { useSCFDomainMetadata } from '@/lib/hooks/useFrameworkMetadata'
 import { SCFDomainMetadata } from '@/components/DynamicMetadata'
+import { AssessmentObjectives } from '@/components/AssessmentObjectives'
 import { createClient } from '@/lib/supabase/client'
 
 // Framework metadata lookup (can be moved to database later)
@@ -1060,6 +1061,20 @@ export default function FrameworkInfoPage() {
                         Loading domain context...
                       </div>
                     )}
+
+                    {/* Assessment Objectives */}
+                    <div>
+                      <h5 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2 flex items-center gap-2">
+                        <svg className="w-4 h-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                        </svg>
+                        Assessment Objectives
+                      </h5>
+                      <AssessmentObjectives
+                        scfControlId={scfRefCodeForMetadata}
+                        initialLimit={3}
+                      />
+                    </div>
 
                     {/* Authoritative Source (SCF Mappings) */}
                     <div>

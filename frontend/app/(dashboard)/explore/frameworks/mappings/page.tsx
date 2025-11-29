@@ -6,6 +6,7 @@ import { useControlMappingsBySCF, useControlMappingsByFrameworkGrouped } from '@
 import { SaveViewModal } from './components/SaveViewModal'
 import { LoadViewModal } from './components/LoadViewModal'
 import { MappingOverview } from './MappingOverview'
+import { UnmappedControlsSection } from './components/UnmappedControlsSection'
 import type { SavedView } from '@/lib/hooks/useSavedViews'
 
 export default function FrameworkMappingsPage() {
@@ -22,6 +23,7 @@ export default function FrameworkMappingsPage() {
   const [showAllPrimaryControls, setShowAllPrimaryControls] = useState(true) // Show all controls even without mappings
   const [includeOrganizationalControls, setIncludeOrganizationalControls] = useState(true) // Include parent controls with children (default: true for better hierarchy)
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false) // Toggle for advanced filters section
+  const [showUnmappedControls, setShowUnmappedControls] = useState(false) // Show secondary framework controls without mappings to primary
   
   // UI state
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
@@ -1130,6 +1132,34 @@ export default function FrameworkMappingsPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* Show unmapped secondary controls */}
+                <div className="flex items-center gap-1.5">
+                  <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showUnmappedControls}
+                      onChange={(e) => setShowUnmappedControls(e.target.checked)}
+                      className="rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500"
+                      disabled={additionalFrameworks.size === 0}
+                    />
+                    <span className={additionalFrameworks.size === 0 ? 'text-gray-400 dark:text-gray-500' : ''}>
+                      Show unmapped secondary controls
+                    </span>
+                  </label>
+                  <div className="group/tooltip relative">
+                    <svg className="h-3.5 w-3.5 text-gray-400 hover:text-indigo-600 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <div className="invisible group-hover/tooltip:visible absolute left-0 bottom-full mb-2 w-72 px-3 py-2 text-xs text-white bg-gray-900 dark:bg-gray-700 rounded-lg shadow-lg z-50">
+                      <div className="font-semibold mb-1">Unmapped Secondary Controls</div>
+                      Shows controls from your selected secondary frameworks that have NO mappings to the primary framework. Useful for identifying coverage gaps - requirements in other frameworks not addressed by your primary.
+                      <div className="absolute top-full left-4 -mt-1">
+                        <div className="border-4 border-transparent border-t-gray-900 dark:border-t-gray-700"></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -1255,7 +1285,15 @@ export default function FrameworkMappingsPage() {
           ) : (
             // UNIFIED RENDERING - All views use framework hierarchy rendering
             <div className="space-y-4">
-              {Object.entries(groupedMappings || {}).map(([nodeKey, node]: [string, any]) => 
+              {/* Unmapped Controls Section - shown when checkbox is checked */}
+              <UnmappedControlsSection
+                primaryFrameworkId={primaryFramework}
+                primaryFrameworkName={overviewStats?.primaryFrameworkName || 'Primary Framework'}
+                secondaryFrameworkIds={Array.from(additionalFrameworks)}
+                enabled={showUnmappedControls && additionalFrameworks.size > 0}
+              />
+
+              {Object.entries(groupedMappings || {}).map(([nodeKey, node]: [string, any]) =>
                 renderFrameworkNode(nodeKey, node, 0)
               )}
 
