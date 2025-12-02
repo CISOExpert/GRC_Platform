@@ -129,20 +129,88 @@ export default function FrameworkMappingsPage() {
   }
   console.log('Mappings error:', mappingsError)
 
-  // Initialize default frameworks on first load
-  useEffect(() => {
-    if (frameworks.length > 0 && !primaryFramework) {
-      // Default primary to SCF
-      const scfFw = frameworks.find(f => f.code === 'SCF')
-      if (scfFw) setPrimaryFramework(scfFw.id)
+  // Track which org was used to set the current primary framework
+  const [lastOrgId, setLastOrgId] = useState<string | null>(null)
 
-      // Set default additional framework - NIST CSF has best mappings
-      const nistCsf = frameworks.find(f => f.code === 'NIST-CSF' && f.version === '2.0')
-      if (nistCsf) {
-        setAdditionalFrameworks(new Set([nistCsf.id]))
+  // Helper function to determine primary and secondary frameworks for an org
+  const getOrgDefaultFrameworks = (orgId: string | null) => {
+    let defaultPrimary: string | null = null
+    let defaultSecondary: Set<string> = new Set()
+
+    if (orgId && orgSelectedFrameworks.length > 0) {
+      // Get Active and Evaluating frameworks
+      const activeFrameworks = orgSelectedFrameworks.filter(fw => getSelectionStatus(fw.id) === 'active')
+      const evaluatingFrameworks = orgSelectedFrameworks.filter(fw => getSelectionStatus(fw.id) === 'evaluating')
+
+      if (activeFrameworks.length > 0) {
+        // Primary = first Active framework
+        defaultPrimary = activeFrameworks[0].id
+
+        // Secondary = other Active frameworks (not the primary)
+        const otherActiveIds = activeFrameworks.slice(1).map(fw => fw.id)
+        if (otherActiveIds.length > 0) {
+          defaultSecondary = new Set(otherActiveIds)
+        } else if (evaluatingFrameworks.length > 0) {
+          // No other Active frameworks, use all Evaluating as secondary
+          defaultSecondary = new Set(evaluatingFrameworks.map(fw => fw.id))
+        }
+      } else if (evaluatingFrameworks.length > 0) {
+        // No Active frameworks - use first Evaluating as primary, rest as secondary
+        defaultPrimary = evaluatingFrameworks[0].id
+        const otherEvaluatingIds = evaluatingFrameworks.slice(1).map(fw => fw.id)
+        if (otherEvaluatingIds.length > 0) {
+          defaultSecondary = new Set(otherEvaluatingIds)
+        }
       }
     }
-  }, [frameworks, primaryFramework])
+
+    // Fall back to SCF + NIST CSF 2.0 if no org frameworks
+    if (!defaultPrimary) {
+      const scfFw = frameworks.find(f => f.code === 'SCF')
+      if (scfFw) defaultPrimary = scfFw.id
+
+      const nistCsf = frameworks.find(f => f.code === 'NIST-CSF' && f.version === '2.0')
+      if (nistCsf) {
+        defaultSecondary = new Set([nistCsf.id])
+      }
+    }
+
+    return { defaultPrimary, defaultSecondary }
+  }
+
+  // Initialize default frameworks on first load
+  // Priority: Org's first Active framework > SCF > first available
+  // Secondary: Other Active frameworks > Evaluating frameworks > NIST CSF 2.0
+  useEffect(() => {
+    if (frameworks.length > 0 && !primaryFramework && !prioritizedLoading) {
+      const { defaultPrimary, defaultSecondary } = getOrgDefaultFrameworks(currentOrgId)
+
+      if (defaultPrimary) {
+        setPrimaryFramework(defaultPrimary)
+        setLastOrgId(currentOrgId)
+      }
+
+      if (defaultSecondary.size > 0) {
+        setAdditionalFrameworks(defaultSecondary)
+      }
+    }
+  }, [frameworks, primaryFramework, prioritizedLoading, currentOrgId, orgSelectedFrameworks, getSelectionStatus])
+
+  // When organization changes, update primary and secondary frameworks
+  useEffect(() => {
+    // Only trigger when org actually changes (not on initial load)
+    if (currentOrgId !== lastOrgId && lastOrgId !== null && !prioritizedLoading) {
+      setLastOrgId(currentOrgId)
+
+      const { defaultPrimary, defaultSecondary } = getOrgDefaultFrameworks(currentOrgId)
+
+      if (defaultPrimary) {
+        setPrimaryFramework(defaultPrimary)
+      }
+
+      setAdditionalFrameworks(defaultSecondary)
+    }
+  }, [currentOrgId, lastOrgId, prioritizedLoading, orgSelectedFrameworks, getSelectionStatus, frameworks])
 
   // Handle primary framework change - also remove from additional if it was selected there
   const handlePrimaryFrameworkChange = (newPrimaryId: string) => {

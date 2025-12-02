@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { useFrameworks, useFrameworkStats, useFrameworkDetails } from '@/lib/hooks/useFrameworks'
+import { useFrameworks, useFrameworkStats, useFrameworkDetails, useOrganizationFrameworks } from '@/lib/hooks/useFrameworks'
 import { useControlMappingsByFrameworkGrouped } from '@/lib/hooks/useControlMappings'
 import { useSCFDomainMetadata } from '@/lib/hooks/useFrameworkMetadata'
+import { useOrganizationContext } from '@/lib/contexts/OrganizationContext'
 import { SCFDomainMetadata } from '@/components/DynamicMetadata'
 import { AssessmentObjectives } from '@/components/AssessmentObjectives'
 import { EvidenceRequests } from '@/components/EvidenceRequests'
@@ -121,6 +122,10 @@ type ThreatStats = {
 
 export default function FrameworkInfoPage() {
   const { data: frameworks = [], isLoading, error } = useFrameworks()
+
+  // Use the shared organization context (same as TopNav)
+  const { currentOrgId: selectedOrg } = useOrganizationContext()
+
   const [selectedFramework, setSelectedFramework] = useState<string>('')
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [selectedControl, setSelectedControl] = useState<SelectedControl | null>(null)
@@ -133,6 +138,76 @@ export default function FrameworkInfoPage() {
   const [threatStats, setThreatStats] = useState<ThreatStats | null>(null)
   const [threatStatsLoading, setThreatStatsLoading] = useState(false)
   const [riskThreatFilter, setRiskThreatFilter] = useState('')
+
+  // Track the org ID that the current orgFrameworks data belongs to (prevents stale data)
+  const [orgFrameworksOrgId, setOrgFrameworksOrgId] = useState<string>('')
+
+  // Fetch organization frameworks
+  const { data: rawOrgFrameworks = [], isFetching: orgFrameworksFetching } = useOrganizationFrameworks(selectedOrg || '')
+
+  // Only use orgFrameworks when they match the selected org (prevents stale data)
+  const orgFrameworks = useMemo(() => {
+    // If no org selected, return empty
+    if (!selectedOrg) return []
+    // If we're fetching or the data doesn't match the selected org, return empty
+    if (orgFrameworksFetching || orgFrameworksOrgId !== selectedOrg) {
+      return []
+    }
+    return rawOrgFrameworks
+  }, [rawOrgFrameworks, orgFrameworksFetching, orgFrameworksOrgId, selectedOrg])
+
+  // Update the tracked org ID when data finishes loading
+  useEffect(() => {
+    if (!orgFrameworksFetching && selectedOrg) {
+      setOrgFrameworksOrgId(selectedOrg)
+    }
+  }, [orgFrameworksFetching, selectedOrg])
+
+  // Clear selected framework when organization changes
+  useEffect(() => {
+    // Clear all selections when org changes
+    setSelectedFramework('')
+    setExpanded({})
+    setSelectedControl(null)
+    setRelatedRisks([])
+    setRelatedThreats([])
+    setRiskStats(null)
+    setThreatStats(null)
+    // Reset the tracked org ID to force showing empty until new data loads
+    setOrgFrameworksOrgId('')
+  }, [selectedOrg])
+
+  // Sort frameworks: Active first, then Evaluating, then others
+  const sortedFrameworks = useMemo(() => {
+    if (!frameworks.length) return []
+
+    // Create lookup for org framework status
+    const orgFrameworkMap = new Map(
+      orgFrameworks.map((of: any) => [of.framework_id, of])
+    )
+
+    return [...frameworks].sort((a, b) => {
+      const aOrgFw = orgFrameworkMap.get(a.id)
+      const bOrgFw = orgFrameworkMap.get(b.id)
+
+      // Active frameworks first
+      if (aOrgFw?.selection_status === 'active' && bOrgFw?.selection_status !== 'active') return -1
+      if (bOrgFw?.selection_status === 'active' && aOrgFw?.selection_status !== 'active') return 1
+
+      // Evaluating frameworks second
+      if (aOrgFw?.selection_status === 'evaluating' && !bOrgFw) return -1
+      if (bOrgFw?.selection_status === 'evaluating' && !aOrgFw) return 1
+
+      // Then alphabetically
+      return (a.name || a.code).localeCompare(b.name || b.code)
+    })
+  }, [frameworks, orgFrameworks])
+
+  // Helper to get org framework status
+  const getOrgFrameworkStatus = (frameworkId: string) => {
+    const orgFw = orgFrameworks.find((of: any) => of.framework_id === frameworkId)
+    return orgFw?.selection_status || null
+  }
 
   const info = frameworks.find(fw => fw.id === selectedFramework) || null
   const { data: stats, isLoading: statsLoading } = useFrameworkStats(selectedFramework)
@@ -581,6 +656,11 @@ export default function FrameworkInfoPage() {
       <div className="mb-6">
         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
           Select Framework
+          {selectedOrg && orgFrameworks.length > 0 && (
+            <span className="ml-2 text-xs font-normal text-gray-500">
+              (sorted by org selection)
+            </span>
+          )}
         </label>
         <select
           className="w-full max-w-md p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
@@ -592,13 +672,36 @@ export default function FrameworkInfoPage() {
           }}
         >
           <option value="">-- Choose a framework --</option>
-          {frameworks.map(fw => (
-            <option key={fw.id} value={fw.id}>
-              {fw.name || fw.code} {fw.version && `(${fw.version})`}
-            </option>
-          ))}
+          {sortedFrameworks.map(fw => {
+            const status = getOrgFrameworkStatus(fw.id)
+            const statusLabel = status === 'active' ? ' [Active]' : status === 'evaluating' ? ' [Evaluating]' : ''
+            return (
+              <option key={fw.id} value={fw.id}>
+                {fw.name || fw.code} {fw.version && `(${fw.version})`}{statusLabel}
+              </option>
+            )
+          })}
         </select>
       </div>
+
+      {/* Active Framework Status Badge */}
+      {selectedFramework && getOrgFrameworkStatus(selectedFramework) && (
+        <div className="mb-4">
+          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium ${
+            getOrgFrameworkStatus(selectedFramework) === 'active'
+              ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+              : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'
+          }`}>
+            <span className={`w-2 h-2 rounded-full ${
+              getOrgFrameworkStatus(selectedFramework) === 'active' ? 'bg-green-500' : 'bg-yellow-500'
+            }`}></span>
+            {getOrgFrameworkStatus(selectedFramework) === 'active' ? 'Active Framework' : 'Evaluating Framework'}
+            <span className="text-xs opacity-75">
+              for current organization
+            </span>
+          </span>
+        </div>
+      )}
 
       {info && (
         <div className="space-y-6">

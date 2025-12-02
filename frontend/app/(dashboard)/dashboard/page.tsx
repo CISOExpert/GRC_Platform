@@ -2,7 +2,7 @@
 
 import { useDashboardStats } from '@/lib/hooks/useDashboard'
 import Link from 'next/link'
-import { AlertTriangle, Shield, Zap, Cloud, Skull } from 'lucide-react'
+import { TriangleAlert, Shield, Zap, Cloud, Skull } from 'lucide-react'
 import FrameworkCoverageCards from './components/FrameworkCoverageCards'
 
 // NIST CSF Function colors
@@ -196,7 +196,7 @@ export default function DashboardPage() {
                   </p>
                 </div>
                 <div className="h-12 w-12 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
-                  <AlertTriangle className="h-6 w-6 text-red-600 dark:text-red-400" />
+                  <TriangleAlert className="h-6 w-6 text-red-600 dark:text-red-400" />
                 </div>
               </div>
             </div>
