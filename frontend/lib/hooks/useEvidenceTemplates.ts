@@ -7,11 +7,22 @@ export type EvidenceTemplate = {
   erl_id: string
   artifact_name: string
   area_of_focus: string
-  evidence_documentation_guidance: string | null
-  artifact_format: string | null
-  retention_period: string | null
-  examples: string[] | null
-  notes: string | null
+  description: string | null
+  control_mappings: string | null  // Newline-separated SCF control refs (e.g., "GOV-01\nPRI-01")
+  // Legacy fields for backwards compatibility (may not exist in DB)
+  evidence_documentation_guidance?: string | null
+  artifact_format?: string | null
+  retention_period?: string | null
+  examples?: string[] | null
+  notes?: string | null
+}
+
+/**
+ * Parse control_mappings string into array of SCF control refs
+ */
+export function parseControlMappings(mappings: string | null): string[] {
+  if (!mappings) return []
+  return mappings.split('\n').map(s => s.trim()).filter(Boolean)
 }
 
 /**

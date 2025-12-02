@@ -6,6 +6,7 @@ import { useControlMappingsByFrameworkGrouped } from '@/lib/hooks/useControlMapp
 import { useSCFDomainMetadata } from '@/lib/hooks/useFrameworkMetadata'
 import { SCFDomainMetadata } from '@/components/DynamicMetadata'
 import { AssessmentObjectives } from '@/components/AssessmentObjectives'
+import { EvidenceRequests } from '@/components/EvidenceRequests'
 import { createClient } from '@/lib/supabase/client'
 
 // Framework metadata lookup (can be moved to database later)
@@ -1061,6 +1062,21 @@ export default function FrameworkInfoPage() {
                         Loading domain context...
                       </div>
                     )}
+
+                    {/* Evidence Requests */}
+                    <div>
+                      <h5 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2 flex items-center gap-2">
+                        <svg className="w-4 h-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        Evidence Requests
+                        <span className="text-xs font-normal text-gray-400 dark:text-gray-500">(SCF 2025.3.1)</span>
+                      </h5>
+                      <EvidenceRequests
+                        scfControlId={scfRefCodeForMetadata}
+                        initialLimit={3}
+                      />
+                    </div>
 
                     {/* Assessment Objectives */}
                     <div>

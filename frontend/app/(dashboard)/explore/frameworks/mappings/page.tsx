@@ -718,14 +718,15 @@ export default function FrameworkMappingsPage() {
     let totalControls = 0
     let controlsWithMappings = 0
     let totalMappings = 0
-    const frameworkCounts: Record<string, { mappings: number, uniqueControls: Set<string> }> = {}
+    // Use framework ID as key for accurate counting, store name for display
+    const frameworkCounts: Record<string, { id: string, name: string, mappings: number, uniqueControls: Set<string> }> = {}
 
-    // Initialize all additional frameworks with 0 counts
+    // Initialize all additional frameworks with 0 counts using ID as key
     additionalFrameworks.forEach((fwId) => {
       const fw = frameworks.find(f => f.id === fwId)
       if (fw) {
-        const fwName = `${fw.name} ${fw.version}`.trim()
-        frameworkCounts[fwName] = { mappings: 0, uniqueControls: new Set() }
+        const fwDisplayName = `${fw.name} ${fw.version || ''}`.trim()
+        frameworkCounts[fwId] = { id: fwId, name: fwDisplayName, mappings: 0, uniqueControls: new Set() }
       }
     })
 
@@ -737,11 +738,11 @@ export default function FrameworkMappingsPage() {
       const isControl = node.ref_code || node.control_id
       const isLeafControl = isControl && !hasChildren
       const isOrganizationalParent = isControl && hasChildren
-      
-      const shouldCount = includeOrganizationalControls 
+
+      const shouldCount = includeOrganizationalControls
         ? isControl // Count all controls (leaf + organizational)
         : isLeafControl // Count only leaf controls
-      
+
       if (shouldCount) {
         totalControls++
         // Only count SCF mappings when SCF is explicitly selected in additional frameworks
@@ -750,40 +751,42 @@ export default function FrameworkMappingsPage() {
         if (hasMappings) {
           controlsWithMappings++
           totalMappings += scfMappingCount + (node.comparisonMappings?.length || 0) + (node.relatedMappings?.length || 0)
-          
+
           // Count related framework mappings - both mapping count and unique controls
           const nodeId = node.ref_code || node.control_id
           const processedFrameworks = new Set<string>()
-          
-          // Count comparison mappings
+
+          // Count comparison mappings (using framework ID as key)
           node.comparisonMappings?.forEach((m: any) => {
-            const fwKey = m.framework.id
-            const fwName = `${m.framework.name} ${m.framework.version}`.trim()
-            
-            if (!frameworkCounts[fwName]) {
-              frameworkCounts[fwName] = { mappings: 0, uniqueControls: new Set() }
+            const fwId = m.framework.id
+            const fwDisplayName = `${m.framework.name} ${m.framework.version || ''}`.trim()
+
+            // Initialize if not already present (handles frameworks not in additionalFrameworks list)
+            if (!frameworkCounts[fwId]) {
+              frameworkCounts[fwId] = { id: fwId, name: fwDisplayName, mappings: 0, uniqueControls: new Set() }
             }
-            frameworkCounts[fwName].mappings++
-            
-            if (!processedFrameworks.has(fwKey)) {
-              frameworkCounts[fwName].uniqueControls.add(nodeId)
-              processedFrameworks.add(fwKey)
+            frameworkCounts[fwId].mappings++
+
+            if (!processedFrameworks.has(fwId)) {
+              frameworkCounts[fwId].uniqueControls.add(nodeId)
+              processedFrameworks.add(fwId)
             }
           })
-          
-          // Count related mappings (additional frameworks)
+
+          // Count related mappings (additional frameworks, using framework ID as key)
           node.relatedMappings?.forEach((m: any) => {
-            const fwKey = m.framework.id
-            const fwName = `${m.framework.name} ${m.framework.version}`.trim()
-            
-            if (!frameworkCounts[fwName]) {
-              frameworkCounts[fwName] = { mappings: 0, uniqueControls: new Set() }
+            const fwId = m.framework.id
+            const fwDisplayName = `${m.framework.name} ${m.framework.version || ''}`.trim()
+
+            // Initialize if not already present (handles frameworks not in additionalFrameworks list)
+            if (!frameworkCounts[fwId]) {
+              frameworkCounts[fwId] = { id: fwId, name: fwDisplayName, mappings: 0, uniqueControls: new Set() }
             }
-            frameworkCounts[fwName].mappings++
-            
-            if (!processedFrameworks.has(fwKey)) {
-              frameworkCounts[fwName].uniqueControls.add(nodeId)
-              processedFrameworks.add(fwKey)
+            frameworkCounts[fwId].mappings++
+
+            if (!processedFrameworks.has(fwId)) {
+              frameworkCounts[fwId].uniqueControls.add(nodeId)
+              processedFrameworks.add(fwId)
             }
           })
         }
@@ -795,9 +798,10 @@ export default function FrameworkMappingsPage() {
 
     Object.values(groupedMappings).forEach(countNode)
 
-    const comparedFrameworks = Object.entries(frameworkCounts).map(([name, data]: [string, any]) => ({
-      id: name,
-      name,
+    // Convert frameworkCounts (keyed by ID) to array for display, using stored name
+    const comparedFrameworks = Object.entries(frameworkCounts).map(([fwId, data]: [string, any]) => ({
+      id: fwId,
+      name: data.name,
       count: data.mappings,
       uniqueControls: data.uniqueControls.size
     }))
